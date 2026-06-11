@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base resets for mobile-first PWA ─────────────── */
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  body {
+    @apply bg-surface font-sans text-navy-900 antialiased;
+    overscroll-behavior: none;
+    min-height: 100dvh;
+  }
+
+  /* Safe area padding for iPhone notch */
+  #root {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  h1, h2, h3 {
+    @apply font-display;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-navy-200 rounded-full;
+  }
+}
+
+/* ── Component utilities ─────────────────────────── */
+
+@layer components {
+  .page-container {
+    @apply px-4 pt-4 pb-24 max-w-lg mx-auto min-h-screen;
+  }
+
+  .page-title {
+    @apply font-display text-2xl font-bold text-navy-900 mb-1;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-navy-400 mb-6;
+  }
+
+  .card {
+    @apply bg-white rounded-card shadow-card p-4 transition-shadow duration-200;
+  }
+
+  .card:hover {
+    @apply shadow-card-hover;
+  }
+
+  .btn-primary {
+    @apply bg-navy-900 text-white font-semibold text-sm px-5 py-3 rounded-xl
+           active:scale-[0.97] transition-all duration-150
+           hover:bg-navy-800 disabled:opacity-50 disabled:cursor-not-allowed;
+    min-height: 52px;
+  }
+
+  .btn-secondary {
+    @apply bg-white border border-navy-200 text-navy-700 font-medium text-sm px-5 py-3 rounded-xl
+           active:scale-[0.97] transition-all duration-150
+           hover:border-navy-300 hover:bg-navy-50;
+    min-height: 52px;
+  }
+
+  .btn-gold {
+    @apply bg-gold-500 text-white font-semibold text-sm px-5 py-3 rounded-xl
+           active:scale-[0.97] transition-all duration-150
+           hover:bg-gold-600;
+    min-height: 52px;
+  }
+
+  .btn-danger {
+    @apply bg-danger text-white font-semibold text-sm px-5 py-3 rounded-xl
+           active:scale-[0.97] transition-all duration-150
+           hover:bg-danger-dark;
+    min-height: 52px;
+  }
+
+  .btn-icon {
+    @apply flex items-center justify-center w-10 h-10 rounded-xl
+           text-navy-500 hover:bg-navy-50 active:scale-95 transition-all duration-150;
+  }
+
+  .input-field {
+    @apply w-full bg-white border border-navy-200 rounded-xl px-4 py-3 text-sm
+           text-navy-900 placeholder-navy-300
+           focus:outline-none focus:ring-2 focus:ring-gold-400 focus:border-gold-400
+           transition-all duration-200;
+    min-height: 52px;
+  }
+
+  .label {
+    @apply block text-xs font-semibold text-navy-500 uppercase tracking-wider mb-1.5;
+  }
+
+  /* Lead card left border colors */
+  .lead-border-new {
+    @apply border-l-4 border-l-navy-200;
+  }
+  .lead-border-interested {
+    @apply border-l-4 border-l-gold-500;
+  }
+  .lead-border-not_interested {
+    @apply border-l-4 border-l-danger;
+  }
+  .lead-border-needs_followup {
+    @apply border-l-4 border-l-blue-500;
+  }
+
+  /* Status pill base */
+  .status-pill {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide;
+  }
+
+  /* Empty state */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-16 text-center;
+  }
+
+  .empty-state-icon {
+    @apply w-16 h-16 text-navy-200 mb-4;
+  }
+
+  .empty-state-text {
+    @apply text-navy-400 text-sm max-w-[260px];
+  }
+}
+
+/* ── Utility animations ──────────────────────────── */
+
+@layer utilities {
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.1s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.2s; }
+
+  .glass {
+    @apply bg-white/80 backdrop-blur-xl;
+  }
+}
