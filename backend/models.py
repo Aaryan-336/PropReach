@@ -34,6 +34,11 @@ class GroupCreate(BaseModel):
     name: str
 
 
+class GSheetImportRequest(BaseModel):
+    url: str
+
+
+
 # ── Campaigns ────────────────────────────────────────
 
 

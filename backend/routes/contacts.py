@@ -1,22 +1,80 @@
-"""
-Contacts API — CRUD, CSV import, group management, and blocklist.
-"""
-
-from __future__ import annotations
-
 import io
 import logging
+import re
 from typing import Optional
 
+import httpx
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from auth import verify_api_key
-from models import ContactCreate, ContactOut, GroupCreate, SuccessResponse
+from models import ContactCreate, ContactOut, GroupCreate, SuccessResponse, GSheetImportRequest
 from services.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contacts", tags=["Contacts"], dependencies=[Depends(verify_api_key)])
+
+
+def process_contacts_dataframe(df: pd.DataFrame) -> dict:
+    """Helper to validate columns, clean phone numbers, and upsert contacts from a pandas DataFrame."""
+    # Normalize column names
+    df.columns = df.columns.str.strip().str.lower()
+    if "phone" not in df.columns:
+        raise ValueError("Spreadsheet must have a 'phone' column")
+
+    sb = get_supabase()
+    imported = 0
+    updated = 0
+    errors = []
+
+    for idx, row in df.iterrows():
+        phone = str(row.get("phone", "")).strip()
+        if not phone or pd.isna(row.get("phone")):
+            errors.append({"row": idx + 2, "error": "Missing phone number"})
+            continue
+
+        # Clean phone number — remove spaces, dashes, plus signs for consistency
+        phone_clean = phone.replace(" ", "").replace("-", "").replace("+", "")
+        # Remove any floating point tail if parsed as float (e.g. '919876543210.0' -> '919876543210')
+        if phone_clean.endswith(".0"):
+            phone_clean = phone_clean[:-2]
+
+        if not phone_clean.isdigit():
+            errors.append({"row": idx + 2, "error": f"Invalid phone: {phone}"})
+            continue
+
+        contact_data = {
+            "phone": phone_clean,
+            "name": str(row.get("name", "")).strip() or None if pd.notna(row.get("name")) else None,
+            "group_name": str(row.get("group_name", "General")).strip() if pd.notna(row.get("group_name")) else "General",
+        }
+
+        # Collect any extra columns as custom_fields
+        known_cols = {"phone", "name", "group_name"}
+        custom_fields = {}
+        for col in df.columns:
+            if col not in known_cols and pd.notna(row.get(col)):
+                custom_fields[col] = str(row[col]).strip()
+        if custom_fields:
+            contact_data["custom_fields"] = custom_fields
+
+        try:
+            existing = sb.table("contacts").select("id").eq("phone", phone_clean).execute()
+            if existing.data:
+                sb.table("contacts").update(contact_data).eq("phone", phone_clean).execute()
+                updated += 1
+            else:
+                sb.table("contacts").insert(contact_data).execute()
+                imported += 1
+        except Exception as e:
+            errors.append({"row": idx + 2, "error": str(e)})
+
+    return {
+        "imported": imported,
+        "updated": updated,
+        "errors": errors[:20],
+        "total_errors": len(errors)
+    }
 
 
 @router.get("")
@@ -87,60 +145,68 @@ async def import_contacts(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
 
-    # Validate required column
-    df.columns = df.columns.str.strip().str.lower()
-    if "phone" not in df.columns:
-        raise HTTPException(
-            status_code=400,
-            detail="CSV must have a 'phone' column"
-        )
-
-    sb = get_supabase()
-    imported = 0
-    updated = 0
-    errors = []
-
-    for idx, row in df.iterrows():
-        phone = str(row.get("phone", "")).strip()
-        if not phone:
-            errors.append({"row": idx + 2, "error": "Missing phone number"})
-            continue
-
-        # Clean phone number — remove spaces, dashes, plus signs for consistency
-        phone_clean = phone.replace(" ", "").replace("-", "").replace("+", "")
-        if not phone_clean.isdigit():
-            errors.append({"row": idx + 2, "error": f"Invalid phone: {phone}"})
-            continue
-
-        contact_data = {
-            "phone": phone_clean,
-            "name": str(row.get("name", "")).strip() or None,
-            "group_name": str(row.get("group_name", "General")).strip(),
-        }
-
-        # Collect any extra columns as custom_fields
-        known_cols = {"phone", "name", "group_name"}
-        custom_fields = {}
-        for col in df.columns:
-            if col not in known_cols and pd.notna(row.get(col)):
-                custom_fields[col] = str(row[col]).strip()
-        if custom_fields:
-            contact_data["custom_fields"] = custom_fields
-
-        try:
-            existing = sb.table("contacts").select("id").eq("phone", phone_clean).execute()
-            if existing.data:
-                sb.table("contacts").update(contact_data).eq("phone", phone_clean).execute()
-                updated += 1
-            else:
-                sb.table("contacts").insert(contact_data).execute()
-                imported += 1
-        except Exception as e:
-            errors.append({"row": idx + 2, "error": str(e)})
+    try:
+        result = process_contacts_dataframe(df)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
 
     return SuccessResponse(
-        message=f"Import complete: {imported} created, {updated} updated, {len(errors)} errors",
-        data={"imported": imported, "updated": updated, "errors": errors[:20]},
+        message=f"Import complete: {result['imported']} created, {result['updated']} updated, {result['total_errors']} errors",
+        data=result,
+    )
+
+
+@router.post("/import-gsheet")
+async def import_google_sheet(payload: GSheetImportRequest):
+    """
+    Import contacts from a public Google Sheet URL.
+    The URL is converted to a direct CSV export link and parsed.
+    """
+    url = payload.url.strip()
+    
+    # Extract spreadsheet ID from url
+    match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid Google Sheets URL. Must contain '/d/SPREADSHEET_ID'")
+    
+    spreadsheet_id = match.group(1)
+    
+    # Check for tab ID (gid) in the URL
+    gid_match = re.search(r"[#&?]gid=([0-9]+)", url)
+    gid = gid_match.group(1) if gid_match else None
+    
+    # Build export URL
+    export_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv"
+    if gid:
+        export_url += f"&gid={gid}"
+        
+    logger.info(f"Fetching Google Sheet CSV from URL: {export_url}")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(export_url, follow_redirects=True, timeout=15.0)
+            response.raise_for_status()
+    except Exception as e:
+        logger.error(f"Failed to fetch Google Sheet: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to retrieve Google Sheet. Please ensure the link sharing is set to 'Anyone with the link can view' (Public)."
+        )
+        
+    try:
+        df = pd.read_csv(io.BytesIO(response.content))
+    except Exception as e:
+        logger.error(f"Failed to parse Google Sheet CSV: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to parse sheet content as CSV: {str(e)}")
+        
+    try:
+        result = process_contacts_dataframe(df)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+        
+    return SuccessResponse(
+        message=f"Google Sheet Import complete: {result['imported']} created, {result['updated']} updated, {result['total_errors']} errors",
+        data=result,
     )
 
 

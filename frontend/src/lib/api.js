@@ -101,6 +101,14 @@ export function importContacts(file) {
   });
 }
 
+export function importContactsFromGSheet(url) {
+  return request('/contacts/import-gsheet', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  });
+}
+
+
 export function fetchGroups() {
   return request('/contacts/groups');
 }
