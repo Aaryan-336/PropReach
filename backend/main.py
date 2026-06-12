@@ -44,26 +44,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow the frontend (Vercel) and local dev
-cors_origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
-frontend_url = os.getenv("FRONTEND_URL")
-if frontend_url:
-    # Support comma-separated list of origins
-    origins_list = [o.strip() for o in frontend_url.split(",") if o.strip()]
-    for origin in origins_list:
-        if origin not in cors_origins:
-            cors_origins.append(origin)
-
+# CORS — allow all origins (this is a private single-user CRM tool)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins if not (frontend_url == "*" or not frontend_url) else ["*"],
-    allow_credentials=True if frontend_url != "*" else False,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
