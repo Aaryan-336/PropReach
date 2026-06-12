@@ -1,10 +1,10 @@
+import csv
 import io
 import logging
 import re
 from typing import Optional
 
 import httpx
-import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from auth import verify_api_key
@@ -15,11 +15,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contacts", tags=["Contacts"], dependencies=[Depends(verify_api_key)])
 
 
-def process_contacts_dataframe(df: pd.DataFrame) -> dict:
-    """Helper to validate columns, clean phone numbers, and upsert contacts from a pandas DataFrame."""
-    # Normalize column names
-    df.columns = df.columns.str.strip().str.lower()
-    if "phone" not in df.columns:
+def process_contacts_csv(csv_content: str) -> dict:
+    """Helper to validate columns, clean phone numbers, and upsert contacts from a CSV string."""
+    f = io.StringIO(csv_content)
+    reader = csv.DictReader(f)
+
+    # Normalize column names by stripping whitespace and converting to lowercase
+    if not reader.fieldnames:
+        raise ValueError("Spreadsheet must have a header row and cannot be empty")
+
+    # Clean fieldnames and map normalized headers back to original headers
+    headers_map = {h.strip().lower(): h for h in reader.fieldnames}
+
+    if "phone" not in headers_map:
         raise ValueError("Spreadsheet must have a 'phone' column")
 
     sb = get_supabase()
@@ -27,11 +35,18 @@ def process_contacts_dataframe(df: pd.DataFrame) -> dict:
     updated = 0
     errors = []
 
-    for idx, row in df.iterrows():
-        phone = str(row.get("phone", "")).strip()
-        if not phone or pd.isna(row.get("phone")):
-            errors.append({"row": idx + 2, "error": "Missing phone number"})
+    for idx, row in enumerate(reader):
+        row_num = idx + 2  # Row 1 is header, first data row is 2
+
+        # Get values using the headers map
+        phone_key = headers_map.get("phone")
+        phone = row.get(phone_key)
+
+        if phone is None or str(phone).strip() == "":
+            errors.append({"row": row_num, "error": "Missing phone number"})
             continue
+
+        phone = str(phone).strip()
 
         # Clean phone number — remove spaces, dashes, plus signs for consistency
         phone_clean = phone.replace(" ", "").replace("-", "").replace("+", "")
@@ -40,21 +55,35 @@ def process_contacts_dataframe(df: pd.DataFrame) -> dict:
             phone_clean = phone_clean[:-2]
 
         if not phone_clean.isdigit():
-            errors.append({"row": idx + 2, "error": f"Invalid phone: {phone}"})
+            errors.append({"row": row_num, "error": f"Invalid phone: {phone}"})
             continue
+
+        name_key = headers_map.get("name")
+        name_val = row.get(name_key) if name_key else None
+        name = str(name_val).strip() if name_val is not None else None
+        if name == "":
+            name = None
+
+        group_key = headers_map.get("group_name")
+        group_val = row.get(group_key) if group_key else None
+        group_name = str(group_val).strip() if group_val is not None else "General"
+        if not group_name:
+            group_name = "General"
 
         contact_data = {
             "phone": phone_clean,
-            "name": str(row.get("name", "")).strip() or None if pd.notna(row.get("name")) else None,
-            "group_name": str(row.get("group_name", "General")).strip() if pd.notna(row.get("group_name")) else "General",
+            "name": name,
+            "group_name": group_name,
         }
 
         # Collect any extra columns as custom_fields
         known_cols = {"phone", "name", "group_name"}
         custom_fields = {}
-        for col in df.columns:
-            if col not in known_cols and pd.notna(row.get(col)):
-                custom_fields[col] = str(row[col]).strip()
+        for norm_col, orig_col in headers_map.items():
+            if norm_col not in known_cols:
+                val = row.get(orig_col)
+                if val is not None and str(val).strip() != "":
+                    custom_fields[norm_col] = str(val).strip()
         if custom_fields:
             contact_data["custom_fields"] = custom_fields
 
@@ -67,7 +96,7 @@ def process_contacts_dataframe(df: pd.DataFrame) -> dict:
                 sb.table("contacts").insert(contact_data).execute()
                 imported += 1
         except Exception as e:
-            errors.append({"row": idx + 2, "error": str(e)})
+            errors.append({"row": row_num, "error": str(e)})
 
     return {
         "imported": imported,
@@ -141,12 +170,12 @@ async def import_contacts(file: UploadFile = File(...)):
 
     try:
         contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
+        csv_content = contents.decode("utf-8", errors="replace")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {str(e)}")
 
     try:
-        result = process_contacts_dataframe(df)
+        result = process_contacts_csv(csv_content)
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
 
@@ -194,13 +223,13 @@ async def import_google_sheet(payload: GSheetImportRequest):
         )
         
     try:
-        df = pd.read_csv(io.BytesIO(response.content))
+        csv_content = response.text
     except Exception as e:
-        logger.error(f"Failed to parse Google Sheet CSV: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Failed to parse sheet content as CSV: {str(e)}")
+        logger.error(f"Failed to read Google Sheet CSV: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to read sheet content as CSV: {str(e)}")
         
     try:
-        result = process_contacts_dataframe(df)
+        result = process_contacts_csv(csv_content)
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
         

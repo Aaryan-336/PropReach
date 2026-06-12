@@ -5,6 +5,5 @@ apscheduler==3.10.4
 python-multipart==0.0.9
 supabase==2.5.1
 python-dotenv==1.0.1
-pandas==2.2.2
 pydantic==2.7.4
 pydantic-settings==2.3.4
