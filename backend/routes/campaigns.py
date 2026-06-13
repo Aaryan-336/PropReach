@@ -25,6 +25,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"], dependencies=[Depends(verify_api_key)])
 
 
+@router.get("/templates/list")
+async def list_templates():
+    """Fetch available WhatsApp message templates."""
+    try:
+        templates = await get_templates()
+        return {"templates": templates}
+    except CredentialsNotConfigured as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error fetching templates: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch templates")
+
+
 @router.get("")
 async def list_campaigns(
     status: str | None = None,
@@ -205,14 +218,3 @@ async def duplicate_campaign(campaign_id: str):
     )
 
 
-@router.get("/templates/list")
-async def list_templates():
-    """Fetch available WhatsApp message templates."""
-    try:
-        templates = await get_templates()
-        return {"templates": templates}
-    except CredentialsNotConfigured as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error fetching templates: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch templates")
