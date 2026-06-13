@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pause, Play, Copy, Megaphone } from 'lucide-react';
-import { fetchCampaigns, pauseCampaign, resumeCampaign, duplicateCampaign } from '../lib/api';
+import { Plus, Pause, Play, Copy, Megaphone, RotateCcw } from 'lucide-react';
+import { fetchCampaigns, pauseCampaign, resumeCampaign, duplicateCampaign, rerunCampaign } from '../lib/api';
 import CampaignCard from '../components/CampaignCard';
 import CreateCampaignModal from '../components/CreateCampaignModal';
+import CampaignInsights from '../components/CampaignInsights';
 
 const FILTERS = [
   { value: '', label: 'All' },
@@ -17,7 +18,16 @@ export default function Campaigns() {
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [actionMenu, setActionMenu] = useState(null);
+  const [selectedCampaignId, setSelectedCampaignId] = useState(null);
   const queryClient = useQueryClient();
+
+  const rerunMutation = useMutation({
+    mutationFn: rerunCampaign,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      setActionMenu(null);
+    },
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['campaigns', filter],
@@ -58,6 +68,17 @@ export default function Campaigns() {
   };
 
   const getMenuCampaign = () => campaigns.find((c) => c.id === actionMenu);
+
+  if (selectedCampaignId) {
+    return (
+      <div className="page-container" id="campaigns-page">
+        <CampaignInsights
+          campaignId={selectedCampaignId}
+          onBack={() => setSelectedCampaignId(null)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="page-container" id="campaigns-page">
@@ -103,7 +124,11 @@ export default function Campaigns() {
         <div className="space-y-3">
           {campaigns.map((campaign) => (
             <div key={campaign.id} className="relative">
-              <CampaignCard campaign={campaign} onAction={handleAction} />
+              <CampaignCard
+                campaign={campaign}
+                onAction={handleAction}
+                onClick={() => setSelectedCampaignId(campaign.id)}
+              />
 
               {/* Action Menu Dropdown */}
               {actionMenu === campaign.id && (
@@ -129,6 +154,16 @@ export default function Campaigns() {
                     className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-navy-700 hover:bg-navy-50"
                   >
                     <Copy size={14} /> Duplicate
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to rerun this campaign? This will clear all existing message logs for this run and start sending again.')) {
+                        rerunMutation.mutate(campaign.id);
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-navy-700 hover:bg-navy-50 border-t border-navy-50"
+                  >
+                    <RotateCcw size={14} /> Rerun Campaign
                   </button>
                 </div>
               )}

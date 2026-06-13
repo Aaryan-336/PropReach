@@ -11,7 +11,7 @@ function MetricBadge({ icon: Icon, value, label, color }) {
   );
 }
 
-export default function CampaignCard({ campaign, onAction }) {
+export default function CampaignCard({ campaign, onAction, onClick }) {
   const {
     id,
     name,
@@ -36,7 +36,11 @@ export default function CampaignCard({ campaign, onAction }) {
   };
 
   return (
-    <div className="card animate-fade-in" id={`campaign-${id}`}>
+    <div
+      onClick={onClick}
+      className={`card animate-fade-in ${onClick ? 'cursor-pointer hover:border-gold-300 active:scale-[0.99]' : ''} border border-transparent transition-all`}
+      id={`campaign-${id}`}
+    >
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
           <h3 className="font-display font-semibold text-navy-900 truncate">{name}</h3>

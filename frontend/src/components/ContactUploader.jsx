@@ -10,6 +10,12 @@ export default function ContactUploader({ onSuccess }) {
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [groupName, setGroupName] = useState(() => {
+    const d = new Date();
+    const dateStr = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `Import ${dateStr} ${timeStr}`;
+  });
 
   const handleFile = useCallback((selectedFile) => {
     if (!selectedFile) return;
@@ -47,18 +53,23 @@ export default function ContactUploader({ onSuccess }) {
       let res;
       if (activeTab === 'csv') {
         if (!file) return;
-        res = await importContacts(file);
+        res = await importContacts(file, groupName);
       } else {
         if (!gsheetUrl.trim()) {
           setError('Please enter a Google Sheets URL');
           setUploading(false);
           return;
         }
-        res = await importContactsFromGSheet(gsheetUrl);
+        res = await importContactsFromGSheet(gsheetUrl, groupName);
       }
       setResult(res.data || res);
       setFile(null);
       setGsheetUrl('');
+      // Generate a new group name for the next upload
+      const d = new Date();
+      const dateStr = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+      setGroupName(`Import ${dateStr} ${timeStr}`);
       if (onSuccess) onSuccess();
     } catch (err) {
       setError(err.message);
@@ -76,6 +87,21 @@ export default function ContactUploader({ onSuccess }) {
 
   return (
     <div className="space-y-4" id="contact-uploader">
+      {/* Group Name Input */}
+      <div className="bg-navy-50/50 p-3.5 rounded-xl border border-navy-100/80">
+        <label className="label text-navy-600 font-semibold mb-1">List Group Name</label>
+        <input
+          type="text"
+          value={groupName}
+          onChange={(e) => setGroupName(e.target.value)}
+          placeholder="e.g. Balaji Estate Leads"
+          className="input-field w-full !min-h-[44px] !py-2 !px-3.5"
+        />
+        <p className="text-[10px] text-navy-400 mt-1">
+          Every contact in this import will belong to this group, allowing you to select them when launching a campaign.
+        </p>
+      </div>
+
       {/* Tabs */}
       <div className="flex border-b border-navy-100">
         <button

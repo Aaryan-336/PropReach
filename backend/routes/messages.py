@@ -44,9 +44,19 @@ async def list_messages(
     query = query.range(start, end)
 
     result = query.execute()
+    items = result.data or []
+
+    # Enrich with contact names
+    if items:
+        contact_ids = [r["contact_id"] for r in items if r.get("contact_id")]
+        if contact_ids:
+            contacts_result = sb.table("contacts").select("id, name").in_("id", contact_ids).execute()
+            contact_map = {c["id"]: c["name"] for c in (contacts_result.data or [])}
+            for item in items:
+                item["contact_name"] = contact_map.get(item.get("contact_id"))
 
     return {
-        "items": result.data or [],
+        "items": items,
         "total": result.count or 0,
         "page": page,
         "page_size": page_size,

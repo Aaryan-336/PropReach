@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contacts", tags=["Contacts"], dependencies=[Depends(verify_api_key)])
 
 
-def process_contacts_csv(csv_content: str) -> dict:
+def process_contacts_csv(csv_content: str, override_group_name: Optional[str] = None) -> dict:
     """Helper to validate columns, clean phone numbers, and upsert contacts from a CSV string."""
     f = io.StringIO(csv_content)
     reader = csv.DictReader(f)
@@ -64,11 +64,14 @@ def process_contacts_csv(csv_content: str) -> dict:
         if name == "":
             name = None
 
-        group_key = headers_map.get("group_name")
-        group_val = row.get(group_key) if group_key else None
-        group_name = str(group_val).strip() if group_val is not None else "General"
-        if not group_name:
-            group_name = "General"
+        if override_group_name and override_group_name.strip():
+            group_name = override_group_name.strip()
+        else:
+            group_key = headers_map.get("group_name")
+            group_val = row.get(group_key) if group_key else None
+            group_name = str(group_val).strip() if group_val is not None else "General"
+            if not group_name:
+                group_name = "General"
 
         contact_data = {
             "phone": phone_clean,
@@ -159,7 +162,10 @@ async def create_contact(contact: ContactCreate):
 
 
 @router.post("/import")
-async def import_contacts(file: UploadFile = File(...)):
+async def import_contacts(
+    file: UploadFile = File(...),
+    group_name: Optional[str] = Query(None)
+):
     """
     Import contacts from a CSV file.
     Expected columns: name, phone (required), group_name (optional)
@@ -175,7 +181,7 @@ async def import_contacts(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Failed to read CSV: {str(e)}")
 
     try:
-        result = process_contacts_csv(csv_content)
+        result = process_contacts_csv(csv_content, override_group_name=group_name)
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
 
@@ -229,7 +235,7 @@ async def import_google_sheet(payload: GSheetImportRequest):
         raise HTTPException(status_code=400, detail=f"Failed to read sheet content as CSV: {str(e)}")
         
     try:
-        result = process_contacts_csv(csv_content)
+        result = process_contacts_csv(csv_content, override_group_name=payload.group_name)
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
         

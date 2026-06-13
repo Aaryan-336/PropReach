@@ -71,6 +71,10 @@ export function duplicateCampaign(id) {
   return request(`/campaigns/${id}/duplicate`, { method: 'POST' });
 }
 
+export function rerunCampaign(id) {
+  return request(`/campaigns/${id}/rerun`, { method: 'POST' });
+}
+
 export function fetchTemplates(refresh = false) {
   const params = refresh ? '?refresh=true' : '';
   return request(`/campaigns/templates/list${params}`);
@@ -93,19 +97,20 @@ export function createContact(data) {
   });
 }
 
-export function importContacts(file) {
+export function importContacts(file, groupName) {
   const formData = new FormData();
   formData.append('file', file);
-  return request('/contacts/import', {
+  const params = groupName ? `?group_name=${encodeURIComponent(groupName)}` : '';
+  return request(`/contacts/import${params}`, {
     method: 'POST',
     body: formData,
   });
 }
 
-export function importContactsFromGSheet(url) {
+export function importContactsFromGSheet(url, groupName) {
   return request('/contacts/import-gsheet', {
     method: 'POST',
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, group_name: groupName }),
   });
 }
 

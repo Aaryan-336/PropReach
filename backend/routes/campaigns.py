@@ -222,3 +222,52 @@ async def duplicate_campaign(campaign_id: str):
     )
 
 
+@router.post("/{campaign_id}/rerun")
+async def rerun_campaign(
+    campaign_id: str,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    """
+    Rerun a campaign:
+    1. Verify campaign exists.
+    2. Cancel any active scheduled job.
+    3. Delete all message logs in `messages` table for this campaign.
+    4. Reset campaign counters to 0.
+    5. Launch the campaign again.
+    """
+    sb = get_supabase()
+
+    # Verify campaign exists
+    result = sb.table("campaigns").select("*").eq("id", campaign_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Check credentials are configured
+    try:
+        from services.whatsapp import get_credentials
+        await get_credentials()
+    except CredentialsNotConfigured as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Cancel scheduled job if any
+    cancel_scheduled_campaign(campaign_id)
+
+    # Delete message logs for this campaign
+    sb.table("messages").delete().eq("campaign_id", campaign_id).execute()
+
+    # Reset counters
+    reset_data = {
+        "status": "running",
+        "sent_count": 0,
+        "delivered_count": 0,
+        "failed_count": 0,
+        "reply_count": 0,
+    }
+    sb.table("campaigns").update(reset_data).eq("id", campaign_id).execute()
+
+    # Run in background
+    background_tasks.add_task(run_campaign, campaign_id)
+
+    return SuccessResponse(message="Campaign rerun started — sending in background")
+
+

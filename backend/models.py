@@ -36,6 +36,7 @@ class GroupCreate(BaseModel):
 
 class GSheetImportRequest(BaseModel):
     url: str
+    group_name: Optional[str] = None
 
 
 
