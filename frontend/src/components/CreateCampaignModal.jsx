@@ -37,11 +37,24 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
     enabled: isOpen,
   });
 
-  const { data: templatesData, isLoading: templatesLoading } = useQuery({
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data: templatesData, isLoading: templatesLoading, refetch: refetchTemplates } = useQuery({
     queryKey: ['templates'],
-    queryFn: fetchTemplates,
+    queryFn: () => fetchTemplates(false),
     enabled: isOpen && step >= 1,
   });
+
+  const handleRefreshTemplates = async () => {
+    setRefreshing(true);
+    try {
+      const freshData = await fetchTemplates(true);
+      queryClient.setQueryData(['templates'], freshData);
+    } catch (e) {
+      console.error('Failed to refresh templates:', e);
+    }
+    setRefreshing(false);
+  };
 
   const groups = groupsData?.groups || [];
   const templates = templatesData?.templates || [];
@@ -173,7 +186,20 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
           {/* Step 2: Template */}
           {step === 1 && (
             <div className="space-y-3 animate-fade-in">
-              {templatesLoading ? (
+              <div className="flex justify-end">
+                <button
+                  onClick={handleRefreshTemplates}
+                  disabled={refreshing}
+                  className="text-xs text-gold-600 hover:text-gold-700 font-medium flex items-center gap-1"
+                >
+                  {refreshing ? (
+                    <><span className="w-3 h-3 border-2 border-gold-300 border-t-gold-600 rounded-full animate-spin" /> Refreshing...</>
+                  ) : (
+                    '↻ Refresh Templates'
+                  )}
+                </button>
+              </div>
+              {templatesLoading || refreshing ? (
                 <div className="flex items-center justify-center py-8">
                   <span className="w-6 h-6 border-2 border-navy-200 border-t-navy-500 rounded-full animate-spin" />
                 </div>

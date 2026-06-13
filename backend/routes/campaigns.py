@@ -26,9 +26,13 @@ router = APIRouter(prefix="/campaigns", tags=["Campaigns"], dependencies=[Depend
 
 
 @router.get("/templates/list")
-async def list_templates():
-    """Fetch available WhatsApp message templates."""
+async def list_templates(refresh: bool = False):
+    """Fetch available WhatsApp message templates. Pass ?refresh=true to clear cache."""
     try:
+        if refresh:
+            # Clear the cached templates so we fetch fresh from Meta
+            sb = get_supabase()
+            sb.table("settings").delete().eq("key", "templates_cache").execute()
         templates = await get_templates()
         return {"templates": templates}
     except CredentialsNotConfigured as e:

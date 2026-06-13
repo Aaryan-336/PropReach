@@ -71,8 +71,9 @@ export function duplicateCampaign(id) {
   return request(`/campaigns/${id}/duplicate`, { method: 'POST' });
 }
 
-export function fetchTemplates() {
-  return request('/campaigns/templates/list');
+export function fetchTemplates(refresh = false) {
+  const params = refresh ? '?refresh=true' : '';
+  return request(`/campaigns/templates/list${params}`);
 }
 
 // ── Contacts ─────────────────────────────────────────
