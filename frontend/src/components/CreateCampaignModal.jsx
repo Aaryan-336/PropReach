@@ -60,8 +60,9 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
   const templates = templatesData?.templates || [];
   const selectedTemplate = templates.find((t) => t.name === formData.template_name);
 
-  // Extract template variables ({{1}}, {{2}}, etc.)
+  // Extract template variables ({{1}}, {{2}}, etc.) from BODY and HEADER
   const templateVars = [];
+  const headerVars = [];
   if (selectedTemplate) {
     const bodyComponent = selectedTemplate.components?.find((c) => c.type === 'BODY');
     if (bodyComponent?.text) {
@@ -69,6 +70,14 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
       matches.forEach((m) => {
         const num = m.replace(/[{}]/g, '');
         if (!templateVars.includes(num)) templateVars.push(num);
+      });
+    }
+    const headerComponent = selectedTemplate.components?.find((c) => c.type === 'HEADER');
+    if (headerComponent?.text) {
+      const matches = headerComponent.text.match(/\{\{(\d+)\}\}/g) || [];
+      matches.forEach((m) => {
+        const num = m.replace(/[{}]/g, '');
+        if (!headerVars.includes(num)) headerVars.push(num);
       });
     }
   }
@@ -241,33 +250,67 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
           {/* Step 3: Variables */}
           {step === 2 && (
             <div className="space-y-4 animate-fade-in">
-              {templateVars.length === 0 ? (
+              {templateVars.length === 0 && headerVars.length === 0 ? (
                 <div className="p-4 bg-navy-50 rounded-xl">
                   <p className="text-sm text-navy-600">
                     This template has no variables. Skip to next step.
                   </p>
                 </div>
               ) : (
-                templateVars.map((varNum) => (
-                  <div key={varNum}>
-                    <label className="label">{'{{' + varNum + '}} → Contact Field'}</label>
-                    <select
-                      className="input-field"
-                      value={formData.template_vars[varNum] || ''}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          template_vars: { ...formData.template_vars, [varNum]: e.target.value },
-                        })
-                      }
-                    >
-                      <option value="">Select field...</option>
-                      <option value="name">Name</option>
-                      <option value="phone">Phone</option>
-                      <option value="group_name">Group</option>
-                    </select>
-                  </div>
-                ))
+                <>
+                  {headerVars.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Header Variables</p>
+                      {headerVars.map((varNum) => (
+                        <div key={`h-${varNum}`}>
+                          <label className="label">{`Header {{${varNum}}} → Contact Field`}</label>
+                          <select
+                            className="input-field"
+                            value={formData.template_vars[`header_${varNum}`] || ''}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                template_vars: { ...formData.template_vars, [`header_${varNum}`]: e.target.value },
+                              })
+                            }
+                          >
+                            <option value="">Select field...</option>
+                            <option value="name">Name</option>
+                            <option value="phone">Phone</option>
+                            <option value="group_name">Group</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {templateVars.length > 0 && (
+                    <div className="space-y-3">
+                      {headerVars.length > 0 && (
+                        <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Body Variables</p>
+                      )}
+                      {templateVars.map((varNum) => (
+                        <div key={varNum}>
+                          <label className="label">{'{{' + varNum + '}} → Contact Field'}</label>
+                          <select
+                            className="input-field"
+                            value={formData.template_vars[varNum] || ''}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                template_vars: { ...formData.template_vars, [varNum]: e.target.value },
+                              })
+                            }
+                          >
+                            <option value="">Select field...</option>
+                            <option value="name">Name</option>
+                            <option value="phone">Phone</option>
+                            <option value="group_name">Group</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

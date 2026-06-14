@@ -72,6 +72,7 @@ async def send_template_message(
     template_name: str,
     language_code: str = "en",
     variables: list[str] | None = None,
+    header_variables: list[str] | None = None,
 ) -> dict:
     """
     Send a WhatsApp template message to a single phone number.
@@ -80,7 +81,8 @@ async def send_template_message(
         phone: Phone number in international format (e.g. "919876543210")
         template_name: Name of the approved template
         language_code: Template language code
-        variables: List of variable values for template placeholders
+        variables: List of variable values for BODY template placeholders
+        header_variables: List of variable values for HEADER template placeholders
 
     Returns:
         Meta API response dict with message ID on success
@@ -95,14 +97,24 @@ async def send_template_message(
 
     # Build template components with variables
     components = []
+
+    # Header variables (if any)
+    if header_variables:
+        filled_header = [v for v in header_variables if v and str(v).strip()]
+        if filled_header:
+            components.append({
+                "type": "header",
+                "parameters": [{"type": "text", "text": str(v)} for v in filled_header],
+            })
+
+    # Body variables — only add if there are real non-empty values
     if variables:
-        parameters = [
-            {"type": "text", "text": var} for var in variables
-        ]
-        components.append({
-            "type": "body",
-            "parameters": parameters,
-        })
+        filled_vars = [v for v in variables if v and str(v).strip()]
+        if filled_vars:
+            components.append({
+                "type": "body",
+                "parameters": [{"type": "text", "text": str(v)} for v in filled_vars],
+            })
 
     payload = {
         "messaging_product": "whatsapp",
@@ -114,6 +126,7 @@ async def send_template_message(
         },
     }
 
+    # Only add components if we actually have filled parameters
     if components:
         payload["template"]["components"] = components
 

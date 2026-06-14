@@ -102,14 +102,36 @@ async def run_campaign(campaign_id: str):
         phone = contact["phone"]
         contact_id = contact["id"]
 
-        # Build variables from contact fields
-        variables = []
+        # Build variables from contact fields, splitting header vs body
+        body_vars_map = {}
+        header_vars_map = {}
+
         if template_vars:
-            for _key, field_name in sorted(template_vars.items()):
+            for k, field_name in template_vars.items():
                 value = contact.get(field_name, "")
                 if not value and contact.get("custom_fields"):
                     value = contact["custom_fields"].get(field_name, "")
-                variables.append(str(value) if value else "")
+                val_str = str(value) if value else ""
+
+                if k.startswith("header_"):
+                    try:
+                        num = int(k.replace("header_", ""))
+                        header_vars_map[num] = val_str
+                    except ValueError:
+                        pass
+                else:
+                    try:
+                        num = int(k)
+                        body_vars_map[num] = val_str
+                    except ValueError:
+                        pass
+
+        # Sort values by placeholder index
+        variables = [body_vars_map[k] for k in sorted(body_vars_map.keys())]
+        header_variables = [header_vars_map[k] for k in sorted(header_vars_map.keys())]
+
+        has_real_vars = any(v.strip() for v in variables) if variables else False
+        has_real_header_vars = any(v.strip() for v in header_variables) if header_variables else False
 
         # Insert message record as pending
         msg_data = {
@@ -127,7 +149,8 @@ async def run_campaign(campaign_id: str):
             result = await send_template_message_with_retry(
                 phone=phone,
                 template_name=template_name,
-                variables=variables if variables else None,
+                variables=variables if has_real_vars else None,
+                header_variables=header_variables if has_real_header_vars else None,
             )
 
             if result["success"]:
