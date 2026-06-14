@@ -163,14 +163,27 @@ async def send_template_message_with_retry(
     template_name: str,
     language_code: str = "en",
     variables: list[str] | None = None,
+    header_variables: list[str] | None = None,
     retry_delay: int = 60,
 ) -> dict:
     """Send a template message with one automatic retry on failure."""
-    result = await send_template_message(phone, template_name, language_code, variables)
+    result = await send_template_message(
+        phone=phone,
+        template_name=template_name,
+        language_code=language_code,
+        variables=variables,
+        header_variables=header_variables,
+    )
     if not result["success"]:
         logger.info(f"Retrying send to {phone} in {retry_delay}s...")
         await asyncio.sleep(retry_delay)
-        result = await send_template_message(phone, template_name, language_code, variables)
+        result = await send_template_message(
+            phone=phone,
+            template_name=template_name,
+            language_code=language_code,
+            variables=variables,
+            header_variables=header_variables,
+        )
     return result
 
 
