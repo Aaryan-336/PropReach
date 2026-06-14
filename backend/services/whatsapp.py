@@ -95,26 +95,122 @@ async def send_template_message(
         "Content-Type": "application/json",
     }
 
-    # Build template components with variables
+    # Fetch template structure to ensure correct payload format
+    import json
+    import re
+
+    template_meta = None
+    try:
+        tpl_url = f"{GRAPH_API_BASE}/{creds['waba_id']}/message_templates"
+        tpl_headers = {"Authorization": f"Bearer {creds['access_token']}"}
+        tpl_params = {"name": template_name}
+        async with httpx.AsyncClient(timeout=10) as client:
+            tpl_res = await client.get(tpl_url, headers=tpl_headers, params=tpl_params)
+            tpl_data = tpl_res.json()
+            # User explicitly requested to print the full response to console/logs
+            print(f"--- Meta API Template Lookup for '{template_name}': ---")
+            print(json.dumps(tpl_data, indent=2))
+            logger.info(f"Meta template lookup for {template_name}: {json.dumps(tpl_data)}")
+            if tpl_res.status_code == 200 and tpl_data.get("data"):
+                # Find matching template name in data (usually the first one)
+                for item in tpl_data["data"]:
+                    if item.get("name") == template_name:
+                        template_meta = item
+                        break
+    except Exception as e:
+        logger.error(f"Failed to fetch template structure for '{template_name}': {e}")
+
+    # Build template components with variables dynamically based on template spec
     components = []
 
-    # Header variables (if any)
-    if header_variables:
-        filled_header = [v for v in header_variables if v and str(v).strip()]
-        if filled_header:
-            components.append({
-                "type": "header",
-                "parameters": [{"type": "text", "text": str(v)} for v in filled_header],
-            })
+    if template_meta and "components" in template_meta:
+        for comp in template_meta["components"]:
+            comp_type = comp.get("type", "").lower()
+            
+            if comp_type == "header":
+                header_format = comp.get("format", "").upper()
+                
+                if header_format in ("IMAGE", "VIDEO", "DOCUMENT"):
+                    # Media header parameter
+                    media_url = None
+                    if header_variables and len(header_variables) > 0 and header_variables[0].strip():
+                        media_url = header_variables[0].strip()
+                    else:
+                        # Fallback to example header handle or example asset URL
+                        example_handles = comp.get("example", {}).get("header_handle", [])
+                        if example_handles:
+                            media_url = example_handles[0]
+                    
+                    if media_url:
+                        media_key = header_format.lower()
+                        components.append({
+                            "type": "header",
+                            "parameters": [
+                                {
+                                    "type": media_key,
+                                    media_key: {
+                                        "link": media_url
+                                    }
+                                }
+                            ]
+                        })
+                elif header_format == "TEXT":
+                    text = comp.get("text", "")
+                    placeholders = re.findall(r"\{\{(\d+)\}\}", text)
+                    if placeholders:
+                        params = []
+                        for idx, p in enumerate(placeholders):
+                            val = ""
+                            if header_variables and idx < len(header_variables):
+                                val = header_variables[idx]
+                            if not val.strip():
+                                # Try falling back to example header text
+                                examples = comp.get("example", {}).get("header_text", [])
+                                if examples and idx < len(examples):
+                                    val = examples[idx]
+                            params.append({"type": "text", "text": val or "Lead"})
+                        components.append({
+                            "type": "header",
+                            "parameters": params
+                        })
+            elif comp_type == "body":
+                text = comp.get("text", "")
+                placeholders = re.findall(r"\{\{(\d+)\}\}", text)
+                if placeholders:
+                    params = []
+                    for idx, p in enumerate(placeholders):
+                        val = ""
+                        if variables and idx < len(variables):
+                            val = variables[idx]
+                        if not val.strip():
+                            # Try falling back to example body text
+                            examples = comp.get("example", {}).get("body_text", [[]])[0]
+                            if examples and idx < len(examples):
+                                val = examples[idx]
+                        params.append({"type": "text", "text": val or "Lead"})
+                    components.append({
+                        "type": "body",
+                        "parameters": params
+                    })
+    else:
+        # Fallback to old simple behavior if template lookup failed
+        # Header variables (if any)
+        if header_variables:
+            filled_header = [v for v in header_variables if v and str(v).strip()]
+            if filled_header:
+                components.append({
+                    "type": "header",
+                    "parameters": [{"type": "text", "text": str(v)} for v in filled_header],
+                })
 
-    # Body variables — only add if there are real non-empty values
-    if variables:
-        filled_vars = [v for v in variables if v and str(v).strip()]
-        if filled_vars:
-            components.append({
-                "type": "body",
-                "parameters": [{"type": "text", "text": str(v)} for v in filled_vars],
-            })
+        # Body variables — only add if there are real non-empty values
+        if variables:
+            filled_vars = [v for v in variables if v and str(v).strip()]
+            if filled_vars:
+                components.append({
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": str(v)} for v in filled_vars],
+                })
 
     payload = {
         "messaging_product": "whatsapp",

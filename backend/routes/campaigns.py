@@ -271,3 +271,120 @@ async def rerun_campaign(
     return SuccessResponse(message="Campaign rerun started — sending in background")
 
 
+async def process_retry_failed(campaign_id: str):
+    """Background task to sequentially retry all failed messages for a campaign."""
+    sb = get_supabase()
+
+    # Load campaign info
+    camp_res = sb.table("campaigns").select("*").eq("id", campaign_id).execute()
+    if not camp_res.data:
+        logger.error(f"Campaign {campaign_id} not found during retry-failed background task")
+        return
+    campaign = camp_res.data[0]
+    template_name = campaign.get("template_name", "")
+    template_vars = campaign.get("template_vars", {})
+    send_rate = campaign.get("send_rate", 1) or 1
+    delay = 1.0 / send_rate
+
+    # Load failed messages
+    failed_msgs_res = (
+        sb.table("messages")
+        .select("*")
+        .eq("campaign_id", campaign_id)
+        .eq("status", "failed")
+        .execute()
+    )
+    failed_msgs = failed_msgs_res.data or []
+    if not failed_msgs:
+        logger.info(f"No failed messages to retry for campaign {campaign_id}")
+        return
+
+    logger.info(f"Starting background retry of {len(failed_msgs)} failed messages for campaign {campaign_id}")
+
+    from services.scheduler import build_message_variables
+    from services.whatsapp import send_template_message_with_retry
+    from services.supabase_client import increment_campaign_counter
+    from datetime import datetime, timezone
+
+    for msg in failed_msgs:
+        msg_id = msg["id"]
+        contact_id = msg["contact_id"]
+        phone = msg["phone"]
+
+        # Fetch contact details
+        cont_res = sb.table("contacts").select("*").eq("id", contact_id).execute()
+        if not cont_res.data:
+            logger.warning(f"Contact {contact_id} not found for retry message {msg_id}")
+            continue
+        contact = cont_res.data[0]
+
+        # Reset message state to pending in DB
+        sb.table("messages").update({"status": "pending", "error_message": None}).eq("id", msg_id).execute()
+
+        # Build variables
+        variables, header_variables = build_message_variables(contact, template_vars)
+        has_real_vars = any(v.strip() for v in variables) if variables else False
+        has_real_header_vars = any(v.strip() for v in header_variables) if header_variables else False
+
+        try:
+            result = await send_template_message_with_retry(
+                phone=phone,
+                template_name=template_name,
+                variables=variables if has_real_vars else None,
+                header_variables=header_variables if has_real_header_vars else None,
+            )
+
+            if result["success"]:
+                sb.table("messages").update({
+                    "status": "sent",
+                    "wa_message_id": result["wa_message_id"],
+                    "sent_at": datetime.now(timezone.utc).isoformat(),
+                    "error_message": None
+                }).eq("id", msg_id).execute()
+
+                await increment_campaign_counter(campaign_id, "failed_count", -1)
+                await increment_campaign_counter(campaign_id, "sent_count", 1)
+            else:
+                error_msg = result.get("error", "Unknown error")
+                sb.table("messages").update({
+                    "status": "failed",
+                    "error_message": error_msg
+                }).eq("id", msg_id).execute()
+        except Exception as e:
+            logger.error(f"Error retrying message {msg_id}: {e}")
+            sb.table("messages").update({
+                "status": "failed",
+                "error_message": str(e)
+            }).eq("id", msg_id).execute()
+
+        # Rate limiting delay between retries
+        await asyncio.sleep(delay)
+
+
+@router.post("/{campaign_id}/retry-failed")
+async def retry_campaign_failed(campaign_id: str, background_tasks: BackgroundTasks):
+    """Trigger a background process to retry all failed messages of a campaign."""
+    sb = get_supabase()
+
+    # Verify campaign exists
+    result = sb.table("campaigns").select("*").eq("id", campaign_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Check that there actually are failed messages
+    failed_count_res = (
+        sb.table("messages")
+        .select("id", count="exact")
+        .eq("campaign_id", campaign_id)
+        .eq("status", "failed")
+        .execute()
+    )
+    if not failed_count_res.count:
+        return {"success": True, "message": "No failed messages found for this campaign"}
+
+    # Start retry task in background
+    background_tasks.add_task(process_retry_failed, campaign_id)
+
+    return {"success": True, "message": f"Background retry started for {failed_count_res.count} failed messages"}
+
+

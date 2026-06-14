@@ -45,6 +45,36 @@ def shutdown_scheduler():
         logger.info("Scheduler shut down")
 
 
+def build_message_variables(contact: dict, template_vars: dict) -> tuple[list[str], list[str]]:
+    """Helper to parse template_vars into sorted lists of body and header variables."""
+    body_vars_map = {}
+    header_vars_map = {}
+
+    if template_vars:
+        for k, field_name in template_vars.items():
+            value = contact.get(field_name, "")
+            if not value and contact.get("custom_fields"):
+                value = contact["custom_fields"].get(field_name, "")
+            val_str = str(value) if value else ""
+
+            if k.startswith("header_"):
+                try:
+                    num = int(k.replace("header_", ""))
+                    header_vars_map[num] = val_str
+                except ValueError:
+                    pass
+            else:
+                try:
+                    num = int(k)
+                    body_vars_map[num] = val_str
+                except ValueError:
+                    pass
+
+    variables = [body_vars_map[k] for k in sorted(body_vars_map.keys())]
+    header_variables = [header_vars_map[k] for k in sorted(header_vars_map.keys())]
+    return variables, header_variables
+
+
 async def run_campaign(campaign_id: str):
     """
     Execute a campaign: iterate contacts, send messages, track results.
@@ -102,33 +132,8 @@ async def run_campaign(campaign_id: str):
         phone = contact["phone"]
         contact_id = contact["id"]
 
-        # Build variables from contact fields, splitting header vs body
-        body_vars_map = {}
-        header_vars_map = {}
-
-        if template_vars:
-            for k, field_name in template_vars.items():
-                value = contact.get(field_name, "")
-                if not value and contact.get("custom_fields"):
-                    value = contact["custom_fields"].get(field_name, "")
-                val_str = str(value) if value else ""
-
-                if k.startswith("header_"):
-                    try:
-                        num = int(k.replace("header_", ""))
-                        header_vars_map[num] = val_str
-                    except ValueError:
-                        pass
-                else:
-                    try:
-                        num = int(k)
-                        body_vars_map[num] = val_str
-                    except ValueError:
-                        pass
-
-        # Sort values by placeholder index
-        variables = [body_vars_map[k] for k in sorted(body_vars_map.keys())]
-        header_variables = [header_vars_map[k] for k in sorted(header_vars_map.keys())]
+        # Build variables from contact fields
+        variables, header_variables = build_message_variables(contact, template_vars)
 
         has_real_vars = any(v.strip() for v in variables) if variables else False
         has_real_header_vars = any(v.strip() for v in header_variables) if header_variables else False

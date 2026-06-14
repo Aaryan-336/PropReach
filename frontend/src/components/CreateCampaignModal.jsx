@@ -79,8 +79,38 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
         const num = m.replace(/[{}]/g, '');
         if (!headerVars.includes(num)) headerVars.push(num);
       });
+    } else if (headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format)) {
+      headerVars.push('1');
     }
   }
+
+  const highlightPlaceholders = (text, type = 'body') => {
+    if (!text) return '';
+    const regex = /\{\{(\d+)\}\}/g;
+    const parts = text.split(regex);
+    return parts.map((part, index) => {
+      if (index % 2 !== 0) {
+        const varNum = part;
+        const keyName = type === 'header' ? `header_${varNum}` : varNum;
+        const mappedField = formData.template_vars[keyName];
+        return (
+          <span
+            key={index}
+            className={`px-1.5 py-0.5 mx-0.5 rounded text-[10px] font-bold inline-flex items-center ${
+              mappedField 
+                ? 'bg-success/20 text-success border border-success/30' 
+                : 'bg-gold-500/20 text-gold-600 border border-gold-500/35 animate-pulse'
+            }`}
+            title={mappedField ? `Maps to: ${mappedField}` : 'Unmapped placeholder'}
+          >
+            {`{{${varNum}}}`}
+            {mappedField && <span className="text-[8px] font-semibold text-navy-500 ml-1 font-mono">({mappedField})</span>}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -121,7 +151,15 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
     switch (step) {
       case 0: return formData.name.trim().length > 0;
       case 1: return formData.template_name.length > 0;
-      case 2: return true;
+      case 2: {
+        const bodyMapped = templateVars.every(v => formData.template_vars[v]);
+        const headerTextMapped = headerVars.every(v => {
+          const hComp = selectedTemplate?.components?.find(c => c.type === 'HEADER');
+          const isMedia = hComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hComp.format);
+          return isMedia || formData.template_vars[`header_${v}`];
+        });
+        return bodyMapped && headerTextMapped;
+      }
       case 3: return formData.sendNow || formData.scheduled_at;
       case 4: return true;
       default: return false;
@@ -220,29 +258,111 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
                   </p>
                 </div>
               ) : (
-                templates
-                  .filter((t) => t.status === 'APPROVED')
-                  .map((t) => (
-                    <button
-                      key={t.name}
-                      onClick={() => setFormData({ ...formData, template_name: t.name })}
-                      className={`w-full text-left p-3 rounded-xl border-2 transition-all duration-200 ${
-                        formData.template_name === t.name
-                          ? 'border-gold-500 bg-gold-50'
-                          : 'border-navy-100 hover:border-navy-200'
-                      }`}
-                    >
-                      <p className="font-medium text-sm text-navy-900">{t.name}</p>
-                      <p className="text-xs text-navy-400 mt-0.5">
-                        {t.language} · {t.category}
-                      </p>
-                      {t.components?.find((c) => c.type === 'BODY')?.text && (
-                        <p className="text-xs text-navy-500 mt-2 line-clamp-2">
-                          {t.components.find((c) => c.type === 'BODY').text}
+                <div className="space-y-2.5 max-h-[160px] overflow-y-auto pr-1">
+                  {templates
+                    .filter((t) => t.status === 'APPROVED')
+                    .map((t) => (
+                      <button
+                        key={t.name}
+                        onClick={() => setFormData({ ...formData, template_name: t.name, template_vars: {} })}
+                        className={`w-full text-left p-3 rounded-xl border-2 transition-all duration-200 ${
+                          formData.template_name === t.name
+                            ? 'border-gold-500 bg-gold-50'
+                            : 'border-navy-100 hover:border-navy-200'
+                        }`}
+                      >
+                        <p className="font-medium text-sm text-navy-900">{t.name}</p>
+                        <p className="text-xs text-navy-400 mt-0.5">
+                          {t.language} · {t.category}
                         </p>
-                      )}
-                    </button>
-                  ))
+                        {t.components?.find((c) => c.type === 'BODY')?.text && (
+                          <p className="text-xs text-navy-500 mt-2 line-clamp-2">
+                            {t.components.find((c) => c.type === 'BODY').text}
+                          </p>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              )}
+
+              {formData.template_name && selectedTemplate && (
+                <div className="card !bg-navy-50/50 p-3.5 border border-navy-100/80 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-navy-100/60 pb-1.5">
+                    <h3 className="text-[10px] font-bold font-display text-navy-600 uppercase tracking-wider">Template Preview</h3>
+                    <span className="text-[9px] font-bold text-success bg-success/10 px-2 py-0.5 rounded-full uppercase tracking-wide">Approved</span>
+                  </div>
+
+                  <div className="bg-white rounded-xl p-3 shadow-sm border border-navy-100/50 max-w-[95%] space-y-2 text-xs">
+                    {/* Header */}
+                    {selectedTemplate.components?.find(c => c.type === 'HEADER') && (
+                      <div className="border-b border-navy-50/50 pb-1.5">
+                        {(() => {
+                          const h = selectedTemplate.components.find(c => c.type === 'HEADER');
+                          if (h.format === 'IMAGE') {
+                            const fallbackUrl = h.example?.header_handle?.[0];
+                            return (
+                              <div className="relative aspect-[21/9] w-full rounded-lg bg-navy-50 overflow-hidden flex items-center justify-center border border-navy-100">
+                                {fallbackUrl ? (
+                                  <img src={fallbackUrl} alt="Header" className="object-cover w-full h-full" />
+                                ) : (
+                                  <span className="text-[10px] text-navy-400 font-semibold">Image Header</span>
+                                )}
+                              </div>
+                            );
+                          } else if (h.format === 'VIDEO') {
+                            return (
+                              <div className="aspect-[21/9] w-full rounded-lg bg-navy-50 flex items-center justify-center border border-navy-100">
+                                <span className="text-[10px] text-navy-400 font-semibold">Video Header</span>
+                              </div>
+                            );
+                          } else if (h.format === 'DOCUMENT') {
+                            return (
+                              <div className="p-2 rounded-lg bg-navy-50 border border-navy-100 text-[10px] text-navy-400 font-semibold">
+                                PDF Document Header
+                              </div>
+                            );
+                          } else {
+                            return <p className="font-bold text-navy-900 text-[11px]">{highlightPlaceholders(h.text, 'header')}</p>;
+                          }
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Body */}
+                    {selectedTemplate.components?.find(c => c.type === 'BODY') && (
+                      <p className="text-[11px] text-navy-700 whitespace-pre-wrap leading-relaxed">
+                        {highlightPlaceholders(selectedTemplate.components.find(c => c.type === 'BODY').text, 'body')}
+                      </p>
+                    )}
+
+                    {/* Buttons */}
+                    {selectedTemplate.components?.find(c => c.type === 'BUTTONS') && (
+                      <div className="flex flex-col gap-1 pt-1.5 border-t border-navy-50/50">
+                        {selectedTemplate.components.find(c => c.type === 'BUTTONS').buttons?.map((btn, idx) => (
+                          <div key={idx} className="w-full text-center py-1.5 bg-navy-50 rounded-md text-[10px] font-semibold text-gold-600 border border-navy-50 flex items-center justify-center">
+                            {btn.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-2 bg-navy-900 text-[10px] text-navy-200 rounded-lg space-y-0.5">
+                    <p className="font-bold text-gold-400">Required Placeholders:</p>
+                    <p>• Body variables: <span className="text-white font-semibold">{templateVars.length}</span> {templateVars.length > 0 && `(${templateVars.map(v => `{{${v}}}`).join(', ')})`}</p>
+                    {selectedTemplate.components?.find(c => c.type === 'HEADER') && (
+                      <p>• Header variables: <span className="text-white font-semibold">
+                        {headerVars.length}
+                      </span> {(() => {
+                        const h = selectedTemplate.components.find(c => c.type === 'HEADER');
+                        if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(h.format)) {
+                          return `(${h.format.toLowerCase()} link)`;
+                        }
+                        return headerVars.length > 0 ? `(${headerVars.map(v => `{{${v}}}`).join(', ')})` : '';
+                      })()}</p>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -261,33 +381,44 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
                   {headerVars.length > 0 && (
                     <div className="space-y-3">
                       <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Header Variables</p>
-                      {headerVars.map((varNum) => (
-                        <div key={`h-${varNum}`}>
-                          <label className="label">{`Header {{${varNum}}} → Contact Field`}</label>
-                          <select
-                            className="input-field"
-                            value={formData.template_vars[`header_${varNum}`] || ''}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                template_vars: { ...formData.template_vars, [`header_${varNum}`]: e.target.value },
-                              })
-                            }
-                          >
-                            <option value="">Select field...</option>
-                            <option value="name">Name</option>
-                            <option value="phone">Phone</option>
-                            <option value="group_name">Group</option>
-                          </select>
-                        </div>
-                      ))}
+                      {headerVars.map((varNum) => {
+                        const hComp = selectedTemplate?.components?.find(c => c.type === 'HEADER');
+                        const isMedia = hComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hComp.format);
+                        const labelText = isMedia 
+                          ? `Header ${hComp.format.charAt(0) + hComp.format.slice(1).toLowerCase()} URL`
+                          : `Header {{${varNum}}} → Contact Field`;
+                        return (
+                          <div key={`h-${varNum}`}>
+                            <label className="label">{labelText}</label>
+                            <select
+                              className="input-field"
+                              value={formData.template_vars[`header_${varNum}`] || ''}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  template_vars: { ...formData.template_vars, [`header_${varNum}`]: e.target.value },
+                                })
+                              }
+                            >
+                              <option value="">Select field...</option>
+                              <option value="name">Name</option>
+                              <option value="phone">Phone</option>
+                              <option value="group_name">Group</option>
+                            </select>
+                            {isMedia && (
+                              <p className="text-[9px] text-navy-400 mt-1">
+                                Select contact field containing the media URL. If left empty, the approved template's default asset will be used automatically.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
+
                   {templateVars.length > 0 && (
                     <div className="space-y-3">
-                      {headerVars.length > 0 && (
-                        <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Body Variables</p>
-                      )}
+                      <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Body Variables</p>
                       {templateVars.map((varNum) => (
                         <div key={varNum}>
                           <label className="label">{'{{' + varNum + '}} → Contact Field'}</label>
@@ -308,6 +439,12 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
                           </select>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {!canProceed() && (
+                    <div className="p-3 bg-gold-50 border border-gold-200 rounded-xl text-xs text-gold-800 font-medium">
+                      ⚠️ Please map all required body and header text variables to proceed.
                     </div>
                   )}
                 </>

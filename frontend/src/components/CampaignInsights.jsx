@@ -20,9 +20,19 @@ import {
   fetchMessages,
   rerunCampaign,
   pauseCampaign,
-  resumeCampaign
+  resumeCampaign,
+  retryMessage,
+  retryCampaignFailed
 } from '../lib/api';
 import StatusPill from './StatusPill';
+
+const getFriendlyErrorMessage = (rawError) => {
+  if (!rawError) return '';
+  if (rawError.includes('132012') || rawError.toLowerCase().includes('parameter format does not match')) {
+    return 'Template variable mismatch — check campaign settings';
+  }
+  return rawError;
+};
 
 export default function CampaignInsights({ campaignId, onBack }) {
   const queryClient = useQueryClient();
@@ -74,6 +84,22 @@ export default function CampaignInsights({ campaignId, onBack }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
       refetchCampaign();
+    },
+  });
+
+  const retryMessageMutation = useMutation({
+    mutationFn: (messageId) => retryMessage(messageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-messages', campaignId] });
+    },
+  });
+
+  const retryAllFailedMutation = useMutation({
+    mutationFn: () => retryCampaignFailed(campaignId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-messages', campaignId] });
     },
   });
 
@@ -282,10 +308,29 @@ export default function CampaignInsights({ campaignId, onBack }) {
       {/* Detailed Delivery Log */}
       <div className="card p-4 space-y-3">
         <div className="flex items-center justify-between border-b border-navy-50 pb-2">
-          <h3 className="font-semibold text-navy-800 font-display text-xs uppercase tracking-wider">Contact Delivery Log</h3>
-          <span className="text-[10px] font-semibold text-navy-400 bg-navy-50 px-2 py-0.5 rounded-full">
-            Total {totalLogs}
-          </span>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-navy-800 font-display text-xs uppercase tracking-wider">Contact Delivery Log</h3>
+            <span className="text-[10px] font-semibold text-navy-400 bg-navy-50 px-2 py-0.5 rounded-full">
+              Total {totalLogs}
+            </span>
+          </div>
+          {failed_count > 0 && (
+            <button
+              onClick={() => retryAllFailedMutation.mutate()}
+              disabled={retryAllFailedMutation.isPending}
+              className="text-[10px] font-bold text-gold-600 hover:text-gold-700 bg-gold-50 hover:bg-gold-100 border border-gold-200 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
+            >
+              {retryAllFailedMutation.isPending ? (
+                <>
+                  <RefreshCw className="animate-spin" size={10} /> Retrying...
+                </>
+              ) : (
+                <>
+                  <RotateCcw size={10} /> Retry All Failed ({failed_count})
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {isLoadingLogs ? (
@@ -324,9 +369,19 @@ export default function CampaignInsights({ campaignId, onBack }) {
                         </span>
                       )}
                       {log.status === 'failed' && (
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-danger bg-danger/10 px-2 py-0.5 rounded-full">
-                          Failed
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5 justify-end">
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-danger bg-danger/10 px-2 py-0.5 rounded-full">
+                            Failed
+                          </span>
+                          <button
+                            onClick={() => retryMessageMutation.mutate(log.id)}
+                            disabled={retryMessageMutation.isPending}
+                            className="p-1 bg-navy-50 hover:bg-navy-100 border border-navy-200 rounded text-navy-600 transition-colors hover:text-navy-900 disabled:opacity-50"
+                            title="Retry sending to this contact"
+                          >
+                            <RotateCcw size={10} className={retryMessageMutation.isPending ? 'animate-spin' : ''} />
+                          </button>
+                        </div>
                       )}
                       {log.status === 'pending' && (
                         <span className="text-[9px] font-bold uppercase tracking-wider text-navy-400 bg-navy-50 px-2 py-0.5 rounded-full">
@@ -340,7 +395,13 @@ export default function CampaignInsights({ campaignId, onBack }) {
                   </div>
                   {log.status === 'failed' && log.error_message && (
                     <div className="mt-1 p-1.5 bg-danger/5 border border-danger/10 rounded-lg text-[9px] text-danger leading-relaxed">
-                      Error: {log.error_message}
+                      <span className="font-semibold">Error: </span>
+                      {getFriendlyErrorMessage(log.error_message)}
+                      {log.error_message.includes('132012') && (
+                        <p className="text-[8px] text-navy-400 mt-0.5 font-normal">
+                          Raw: {log.error_message}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

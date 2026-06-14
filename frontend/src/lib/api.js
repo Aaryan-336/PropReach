@@ -136,6 +136,14 @@ export function fetchMessages({ campaignId, contactId, page = 1, pageSize = 50 }
   return request(`/messages?${params}`);
 }
 
+export function retryMessage(id) {
+  return request(`/messages/${id}/retry`, { method: 'POST' });
+}
+
+export function retryCampaignFailed(campaignId) {
+  return request(`/campaigns/${campaignId}/retry-failed`, { method: 'POST' });
+}
+
 export function fetchReplies({ label, isRead, page = 1, pageSize = 50 } = {}) {
   const params = new URLSearchParams({ page, page_size: pageSize });
   if (label) params.set('label', label);

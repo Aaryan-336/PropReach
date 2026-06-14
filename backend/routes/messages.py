@@ -210,3 +210,91 @@ async def update_reply(reply_id: str, label: Optional[str] = None, agent_note: O
 
     sb.table("replies").update(update_data).eq("id", reply_id).execute()
     return {"message": "Reply updated", "success": True}
+
+
+@router.post("/{message_id}/retry")
+async def retry_message(message_id: str):
+    """Retry sending a failed message."""
+    sb = get_supabase()
+
+    # 1. Fetch message
+    msg_res = sb.table("messages").select("*").eq("id", message_id).execute()
+    if not msg_res.data:
+        raise HTTPException(status_code=404, detail="Message not found")
+    msg = msg_res.data[0]
+
+    if msg.get("status") != "failed":
+        raise HTTPException(status_code=400, detail="Only failed messages can be retried")
+
+    campaign_id = msg.get("campaign_id")
+    contact_id = msg.get("contact_id")
+
+    if not campaign_id or not contact_id:
+        raise HTTPException(status_code=400, detail="Message lacks valid campaign or contact references")
+
+    # 2. Fetch campaign and contact
+    camp_res = sb.table("campaigns").select("*").eq("id", campaign_id).execute()
+    if not camp_res.data:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = camp_res.data[0]
+
+    cont_res = sb.table("contacts").select("*").eq("id", contact_id).execute()
+    if not cont_res.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    contact = cont_res.data[0]
+
+    # 3. Build variables using the helper function
+    from services.scheduler import build_message_variables
+    template_name = campaign.get("template_name", "")
+    template_vars = campaign.get("template_vars", {})
+    variables, header_variables = build_message_variables(contact, template_vars)
+
+    has_real_vars = any(v.strip() for v in variables) if variables else False
+    has_real_header_vars = any(v.strip() for v in header_variables) if header_variables else False
+
+    # 4. Attempt send
+    from services.whatsapp import send_template_message_with_retry
+    from datetime import datetime, timezone
+    
+    # Reset status in DB to pending first (so it doesn't show failed during transit)
+    sb.table("messages").update({"status": "pending", "error_message": None}).eq("id", message_id).execute()
+
+    try:
+        result = await send_template_message_with_retry(
+            phone=contact["phone"],
+            template_name=template_name,
+            variables=variables if has_real_vars else None,
+            header_variables=header_variables if has_real_header_vars else None,
+        )
+
+        if result["success"]:
+            # Update message status to sent
+            sb.table("messages").update({
+                "status": "sent",
+                "wa_message_id": result["wa_message_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "error_message": None
+            }).eq("id", message_id).execute()
+
+            # Decrement failed count and increment sent count
+            from services.supabase_client import increment_campaign_counter
+            await increment_campaign_counter(campaign_id, "failed_count", -1)
+            await increment_campaign_counter(campaign_id, "sent_count", 1)
+
+            return {"success": True, "message": "Message sent successfully"}
+        else:
+            error_msg = result.get("error", "Unknown error")
+            sb.table("messages").update({
+                "status": "failed",
+                "error_message": error_msg
+            }).eq("id", message_id).execute()
+            
+            raise HTTPException(status_code=400, detail=f"Meta API Error: {error_msg}")
+
+    except Exception as e:
+        error_str = str(e)
+        sb.table("messages").update({
+            "status": "failed",
+            "error_message": error_str
+        }).eq("id", message_id).execute()
+        raise HTTPException(status_code=500, detail=f"Retry execution failed: {error_str}")
