@@ -80,6 +80,28 @@ export function fetchTemplates(refresh = false) {
   return request(`/campaigns/templates/list${params}`);
 }
 
+export function createTemplate(payload) {
+  return request('/campaigns/templates', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteTemplate(name) {
+  return request(`/campaigns/templates/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function uploadTemplateMedia(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request('/campaigns/templates/upload-media', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
 // ── Contacts ─────────────────────────────────────────
 
 export function fetchContacts({ page = 1, pageSize = 50, search, group, blocked } = {}) {

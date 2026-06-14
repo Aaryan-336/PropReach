@@ -8,8 +8,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from auth import verify_api_key
 from models import CampaignCreate, CampaignLaunch, SuccessResponse
 from services.supabase_client import (
@@ -40,6 +39,65 @@ async def list_templates(refresh: bool = False):
     except Exception as e:
         logger.error(f"Error fetching templates: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch templates")
+
+
+@router.post("/templates/upload-media")
+async def upload_template_media_route(file: UploadFile = File(...)):
+    """Upload template header media to Meta API to retrieve a header handle."""
+    try:
+        file_bytes = await file.read()
+        # Enforce the 5MB file limit
+        if len(file_bytes) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File size exceeds the 5MB limit.")
+        
+        from services.whatsapp import upload_media_to_meta
+        handle = await upload_media_to_meta(file_bytes, file.filename, file.content_type)
+        return {"success": True, "handle": handle}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error uploading template media: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/templates")
+async def create_template_route(payload: dict):
+    """Submit a template creation request to Meta."""
+    try:
+        from services.whatsapp import create_meta_template
+        res = await create_meta_template(payload)
+        if res["success"]:
+            # Invalidate cached templates list
+            sb = get_supabase()
+            sb.table("settings").delete().eq("key", "templates_cache").execute()
+            return {"success": True, "data": res["data"]}
+        else:
+            raise HTTPException(status_code=400, detail=res["error"])
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error creating template: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/templates/{template_name}")
+async def delete_template_route(template_name: str):
+    """Delete a template from Meta."""
+    try:
+        from services.whatsapp import delete_meta_template
+        res = await delete_meta_template(template_name)
+        if res["success"]:
+            # Invalidate cached templates list
+            sb = get_supabase()
+            sb.table("settings").delete().eq("key", "templates_cache").execute()
+            return {"success": True, "message": "Template deleted successfully"}
+        else:
+            raise HTTPException(status_code=400, detail=res["error"])
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error deleting template: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("")

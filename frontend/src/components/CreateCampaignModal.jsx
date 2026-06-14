@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, ChevronRight, ChevronLeft, Zap, Clock, Check, AlertCircle } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchGroups, fetchTemplates, createCampaign, launchCampaign } from '../lib/api';
@@ -17,7 +17,7 @@ const SEND_SPEEDS = [
   { value: 20, label: 'Fast (20/sec)', description: 'For high-volume verified accounts' },
 ];
 
-export default function CreateCampaignModal({ isOpen, onClose }) {
+export default function CreateCampaignModal({ isOpen, onClose, preselectedTemplateName = null }) {
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState({
     name: '',
@@ -31,6 +31,25 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
   const [error, setError] = useState(null);
   const queryClient = useQueryClient();
 
+  // Reset/Pre-fill form data if preselected template is provided
+  useEffect(() => {
+    if (isOpen) {
+      if (preselectedTemplateName) {
+        setFormData(prev => ({
+          ...prev,
+          template_name: preselectedTemplateName,
+          template_vars: {}
+        }));
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          template_name: '',
+          template_vars: {}
+        }));
+      }
+    }
+  }, [isOpen, preselectedTemplateName]);
+
   const { data: groupsData } = useQuery({
     queryKey: ['groups'],
     queryFn: fetchGroups,
@@ -42,7 +61,7 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
   const { data: templatesData, isLoading: templatesLoading, refetch: refetchTemplates } = useQuery({
     queryKey: ['templates'],
     queryFn: () => fetchTemplates(false),
-    enabled: isOpen && step >= 1,
+    enabled: isOpen,
   });
 
   const handleRefreshTemplates = async () => {
@@ -561,7 +580,14 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
         <div className="flex items-center gap-3 p-4 border-t border-navy-100">
           {step > 0 && (
             <button
-              onClick={() => { setStep(step - 1); setError(null); }}
+              onClick={() => {
+                if (preselectedTemplateName && step === 2) {
+                  setStep(0);
+                } else {
+                  setStep(step - 1);
+                }
+                setError(null);
+              }}
               className="btn-secondary flex items-center gap-1"
             >
               <ChevronLeft size={16} /> Back
@@ -570,7 +596,13 @@ export default function CreateCampaignModal({ isOpen, onClose }) {
           <div className="flex-1" />
           {step < 4 ? (
             <button
-              onClick={() => setStep(step + 1)}
+              onClick={() => {
+                if (preselectedTemplateName && step === 0) {
+                  setStep(2);
+                } else {
+                  setStep(step + 1);
+                }
+              }}
               disabled={!canProceed()}
               className="btn-primary flex items-center gap-1"
             >

@@ -373,3 +373,83 @@ async def test_connection() -> dict:
         return {"success": False, "message": "Connection timed out"}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+
+async def upload_media_to_meta(file_bytes: bytes, file_name: str, mime_type: str) -> str:
+    """Upload header media (JPG/PNG) to Meta Resumable Upload API to get a header_handle."""
+    creds = await get_credentials()
+    access_token = creds["access_token"]
+    
+    # 1. Fetch app_id dynamically by debugging the access token
+    debug_url = "https://graph.facebook.com/debug_token"
+    debug_params = {"input_token": access_token, "access_token": access_token}
+    async with httpx.AsyncClient(timeout=15) as client:
+        debug_res = await client.get(debug_url, params=debug_params)
+        debug_data = debug_res.json()
+        app_id = debug_data.get("data", {}).get("app_id")
+        if not app_id:
+            raise RuntimeError(f"Could not retrieve Meta App ID from token debug endpoint: {debug_data}")
+
+    # 2. Start Meta resumable upload session
+    init_url = f"{GRAPH_API_BASE}/{app_id}/uploads"
+    init_params = {
+        "file_name": file_name,
+        "file_length": len(file_bytes),
+        "file_type": mime_type,
+        "access_token": access_token
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        init_res = await client.post(init_url, params=init_params)
+        init_data = init_res.json()
+        session_id = init_data.get("id")
+        if not session_id:
+            raise RuntimeError(f"Failed to initialize upload session: {init_data}")
+
+    # 3. Upload the binary data chunk
+    upload_url = f"https://graph.facebook.com/v19.0/{session_id}"
+    upload_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "file_offset": "0",
+        "Content-Type": "application/octet-stream"
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        upload_res = await client.post(upload_url, headers=upload_headers, content=file_bytes)
+        upload_data = upload_res.json()
+        handle = upload_data.get("h")
+        if not handle:
+            raise RuntimeError(f"Upload failed to return a media handle: {upload_data}")
+        return handle
+
+
+async def create_meta_template(payload: dict) -> dict:
+    """Create a new template on Meta Business Manager."""
+    creds = await get_credentials()
+    url = f"{GRAPH_API_BASE}/{creds['waba_id']}/message_templates"
+    headers = {
+        "Authorization": f"Bearer {creds['access_token']}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        res = await client.post(url, json=payload, headers=headers)
+        data = res.json()
+        if res.status_code == 200:
+            return {"success": True, "data": data}
+        else:
+            error_msg = data.get("error", {}).get("message", "Template creation failed")
+            return {"success": False, "error": error_msg}
+
+
+async def delete_meta_template(template_name: str) -> dict:
+    """Delete a template from Meta Business Manager."""
+    creds = await get_credentials()
+    url = f"{GRAPH_API_BASE}/{creds['waba_id']}/message_templates"
+    headers = {"Authorization": f"Bearer {creds['access_token']}"}
+    params = {"name": template_name}
+    async with httpx.AsyncClient(timeout=30) as client:
+        res = await client.delete(url, headers=headers, params=params)
+        data = res.json()
+        if res.status_code == 200:
+            return {"success": True, "data": data}
+        else:
+            error_msg = data.get("error", {}).get("message", "Template deletion failed")
+            return {"success": False, "error": error_msg}
