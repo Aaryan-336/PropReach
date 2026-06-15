@@ -76,16 +76,21 @@ async def receive_webhook(request: Request):
     """
     body = await request.body()
 
+    # Log raw webhook payload for diagnostics
+    logger.info(f"Webhook received: {len(body)} bytes")
+
     # Verify HMAC signature
     signature = request.headers.get("X-Hub-Signature-256", "")
     if signature and not verify_signature(body, signature):
-        logger.warning("Invalid webhook signature")
+        logger.warning("Invalid webhook signature — rejecting request")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
         data = json.loads(body)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    logger.info(f"Webhook payload: {json.dumps(data)}")
 
     # Process each entry
     for entry in data.get("entry", []):
@@ -94,11 +99,15 @@ async def receive_webhook(request: Request):
 
             # Handle message status updates
             statuses = value.get("statuses", [])
+            if statuses:
+                logger.info(f"Processing {len(statuses)} status update(s)")
             for status_update in statuses:
                 await _handle_status_update(status_update)
 
             # Handle inbound messages
             messages = value.get("messages", [])
+            if messages:
+                logger.info(f"Processing {len(messages)} inbound message(s)")
             for message in messages:
                 await _handle_inbound_message(message, value)
 
@@ -111,7 +120,10 @@ async def _handle_status_update(status_update: dict):
     status = status_update.get("status")
     timestamp = status_update.get("timestamp")
 
+    logger.info(f"Status update received: id={wa_message_id}, status={status}, raw={json.dumps(status_update)}")
+
     if not wa_message_id or not status:
+        logger.warning(f"Ignoring status update with missing id or status: {status_update}")
         return
 
     ts = None
@@ -128,26 +140,39 @@ async def _handle_status_update(status_update: dict):
     ts_field, ts_value = ts_field_map.get(status, (None, None))
 
     try:
+        # Update the message status in the database
         await update_message_status(wa_message_id, status, ts_field, ts_value)
 
-        # Update campaign counters for delivered status
-        if status == "delivered":
-            sb = get_supabase()
-            msg_result = (
-                sb.table("messages")
-                .select("campaign_id")
-                .eq("wa_message_id", wa_message_id)
-                .execute()
-            )
-            if msg_result.data and msg_result.data[0].get("campaign_id"):
-                await increment_campaign_counter(
-                    msg_result.data[0]["campaign_id"], "delivered_count"
-                )
+        # Look up the campaign this message belongs to
+        sb = get_supabase()
+        msg_result = (
+            sb.table("messages")
+            .select("campaign_id, status")
+            .eq("wa_message_id", wa_message_id)
+            .execute()
+        )
 
-        logger.info(f"Status update: {wa_message_id} → {status}")
+        if not msg_result.data:
+            logger.warning(f"No message found in DB for wa_message_id={wa_message_id}")
+        else:
+            campaign_id = msg_result.data[0].get("campaign_id")
+            logger.info(f"Message {wa_message_id} belongs to campaign {campaign_id}, DB status now: {msg_result.data[0].get('status')}")
+
+            if campaign_id:
+                # Update campaign counters based on status
+                if status == "delivered":
+                    await increment_campaign_counter(campaign_id, "delivered_count")
+                    logger.info(f"Incremented delivered_count for campaign {campaign_id}")
+                elif status == "failed":
+                    # Extract error details from Meta's payload if available
+                    errors = status_update.get("errors", [])
+                    error_msg = errors[0].get("title", "Unknown error") if errors else "Unknown error"
+                    logger.warning(f"Message {wa_message_id} failed: {error_msg}")
+
+        logger.info(f"Status update processed: {wa_message_id} → {status}")
 
     except Exception as e:
-        logger.error(f"Error processing status update: {e}")
+        logger.error(f"Error processing status update for {wa_message_id}: {e}", exc_info=True)
 
 
 async def _handle_inbound_message(message: dict, value: dict):
