@@ -193,7 +193,7 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
       <div className="absolute inset-0 bg-navy-900/50 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl max-h-[90vh] overflow-hidden animate-slide-up">
+      <div className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-navy-100">
           <div>
@@ -218,7 +218,7 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
         </div>
 
         {/* Content */}
-        <div className="p-4 min-h-[300px] overflow-y-auto">
+        <div className="p-4 min-h-0 flex-1 overflow-y-auto">
           {/* Step 1: Name & Group */}
           {step === 0 && (
             <div className="space-y-4 animate-fade-in">
