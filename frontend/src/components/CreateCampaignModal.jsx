@@ -397,18 +397,17 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
                 </div>
               ) : (
                 <>
-                  {headerVars.length > 0 && (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Header Variables</p>
-                      {headerVars.map((varNum) => {
-                        const hComp = selectedTemplate?.components?.find(c => c.type === 'HEADER');
-                        const isMedia = hComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hComp.format);
-                        const labelText = isMedia 
-                          ? `Header ${hComp.format.charAt(0) + hComp.format.slice(1).toLowerCase()} URL`
-                          : `Header {{${varNum}}} → Contact Field`;
-                        return (
+                  {headerVars.length > 0 && (() => {
+                    const hComp = selectedTemplate?.components?.find(c => c.type === 'HEADER');
+                    const isMedia = hComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hComp.format);
+                    // For media headers, the backend uses the template's approved default asset — no mapping needed
+                    if (isMedia) return null;
+                    return (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Header Variables</p>
+                        {headerVars.map((varNum) => (
                           <div key={`h-${varNum}`}>
-                            <label className="label">{labelText}</label>
+                            <label className="label">{`Header {{${varNum}}} → Contact Field`}</label>
                             <select
                               className="input-field"
                               value={formData.template_vars[`header_${varNum}`] || ''}
@@ -424,16 +423,11 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
                               <option value="phone">Phone</option>
                               <option value="group_name">Group</option>
                             </select>
-                            {isMedia && (
-                              <p className="text-[9px] text-navy-400 mt-1">
-                                Select contact field containing the media URL. If left empty, the approved template's default asset will be used automatically.
-                              </p>
-                            )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   {templateVars.length > 0 && (
                     <div className="space-y-3">
