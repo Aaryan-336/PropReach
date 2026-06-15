@@ -131,16 +131,18 @@ async def send_template_message(
                 header_format = comp.get("format", "").upper()
                 
                 if header_format in ("IMAGE", "VIDEO", "DOCUMENT"):
-                    # Media header parameter
+                    # Media header — only include if the user provides a real URL.
+                    # Meta's template `header_handle` is an internal upload token, NOT a URL,
+                    # so we must NOT use it in the "link" field.
+                    # When we omit the header component, Meta uses the template's
+                    # approved default asset automatically.
                     media_url = None
                     if header_variables and len(header_variables) > 0 and header_variables[0].strip():
-                        media_url = header_variables[0].strip()
-                    else:
-                        # Fallback to example header handle or example asset URL
-                        example_handles = comp.get("example", {}).get("header_handle", [])
-                        if example_handles:
-                            media_url = example_handles[0]
-                    
+                        candidate = header_variables[0].strip()
+                        # Only use it if it looks like a real URL
+                        if candidate.startswith("http://") or candidate.startswith("https://"):
+                            media_url = candidate
+
                     if media_url:
                         media_key = header_format.lower()
                         components.append({
@@ -154,6 +156,11 @@ async def send_template_message(
                                 }
                             ]
                         })
+                    else:
+                        logger.info(
+                            f"Skipping media header component for '{template_name}' — "
+                            f"no valid URL provided, Meta will use the approved default asset"
+                        )
                 elif header_format == "TEXT":
                     text = comp.get("text", "")
                     placeholders = re.findall(r"\{\{(\d+)\}\}", text)
