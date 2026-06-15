@@ -131,36 +131,45 @@ async def send_template_message(
                 header_format = comp.get("format", "").upper()
                 
                 if header_format in ("IMAGE", "VIDEO", "DOCUMENT"):
-                    # Media header — only include if the user provides a real URL.
-                    # Meta's template `header_handle` is an internal upload token, NOT a URL,
-                    # so we must NOT use it in the "link" field.
-                    # When we omit the header component, Meta uses the template's
-                    # approved default asset automatically.
-                    media_url = None
+                    # Media header — Meta REQUIRES this component for templates
+                    # with media headers. We must always include it.
+                    media_key = header_format.lower()
+
+                    # Check if the user provided a real URL
+                    user_url = None
                     if header_variables and len(header_variables) > 0 and header_variables[0].strip():
                         candidate = header_variables[0].strip()
-                        # Only use it if it looks like a real URL
                         if candidate.startswith("http://") or candidate.startswith("https://"):
-                            media_url = candidate
+                            user_url = candidate
 
-                    if media_url:
-                        media_key = header_format.lower()
+                    if user_url:
+                        # User provided a valid URL — use "link"
                         components.append({
                             "type": "header",
-                            "parameters": [
-                                {
-                                    "type": media_key,
-                                    media_key: {
-                                        "link": media_url
-                                    }
-                                }
-                            ]
+                            "parameters": [{
+                                "type": media_key,
+                                media_key: {"link": user_url}
+                            }]
                         })
+                        logger.info(f"Using user-provided URL for {header_format} header")
                     else:
-                        logger.info(
-                            f"Skipping media header component for '{template_name}' — "
-                            f"no valid URL provided, Meta will use the approved default asset"
-                        )
+                        # No user URL — use the template's example header_handle as media "id"
+                        example_handles = comp.get("example", {}).get("header_handle", [])
+                        if example_handles:
+                            handle = example_handles[0]
+                            components.append({
+                                "type": "header",
+                                "parameters": [{
+                                    "type": media_key,
+                                    media_key: {"id": handle}
+                                }]
+                            })
+                            logger.info(f"Using template header_handle as media id for {header_format} header")
+                        else:
+                            logger.warning(
+                                f"Template '{template_name}' has {header_format} header but no "
+                                f"header_handle or user URL — message may fail"
+                            )
                 elif header_format == "TEXT":
                     text = comp.get("text", "")
                     placeholders = re.findall(r"\{\{(\d+)\}\}", text)
@@ -233,10 +242,16 @@ async def send_template_message(
     if components:
         payload["template"]["components"] = components
 
+    # Log the exact payload for debugging
+    logger.info(f"Sending to {phone}: {json.dumps(payload)}")
+
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(url, json=payload, headers=headers)
             data = response.json()
+
+            # Log full response for debugging
+            logger.info(f"Meta API response for {phone}: status={response.status_code}, body={json.dumps(data)}")
 
             if response.status_code == 200 and "messages" in data:
                 wa_message_id = data["messages"][0]["id"]
