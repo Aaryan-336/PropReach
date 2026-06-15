@@ -175,7 +175,12 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
         const headerTextMapped = headerVars.every(v => {
           const hComp = selectedTemplate?.components?.find(c => c.type === 'HEADER');
           const isMedia = hComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hComp.format);
-          return isMedia || formData.template_vars[`header_${v}`];
+          if (isMedia) {
+            // Media headers require a valid URL
+            const url = formData.template_vars[`header_${v}`] || '';
+            return url.startsWith('https://') || url.startsWith('http://');
+          }
+          return formData.template_vars[`header_${v}`];
         });
         return bodyMapped && headerTextMapped;
       }
@@ -400,8 +405,37 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
                   {headerVars.length > 0 && (() => {
                     const hComp = selectedTemplate?.components?.find(c => c.type === 'HEADER');
                     const isMedia = hComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hComp.format);
-                    // For media headers, the backend uses the template's approved default asset — no mapping needed
-                    if (isMedia) return null;
+                    
+                    if (isMedia) {
+                      // Show URL text input for media headers
+                      const mediaType = hComp.format.charAt(0) + hComp.format.slice(1).toLowerCase();
+                      return (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Header {mediaType}</p>
+                          <div>
+                            <label className="label">Header {mediaType} URL</label>
+                            <input
+                              type="url"
+                              className="input-field"
+                              placeholder={`https://example.com/your-${mediaType.toLowerCase()}.${hComp.format === 'IMAGE' ? 'jpg' : hComp.format === 'VIDEO' ? 'mp4' : 'pdf'}`}
+                              value={formData.template_vars['header_1'] || ''}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  template_vars: { ...formData.template_vars, header_1: e.target.value },
+                                })
+                              }
+                            />
+                            <p className="text-[10px] text-navy-400 mt-1.5">
+                              Paste a publicly accessible URL to the {mediaType.toLowerCase()} for this template's header.
+                              This must be a direct link (https://) to the media file.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // TEXT header with placeholders — show contact field dropdown
                     return (
                       <div className="space-y-3">
                         <p className="text-xs font-semibold text-navy-500 uppercase tracking-wider">Header Variables</p>

@@ -132,10 +132,10 @@ async def send_template_message(
                 
                 if header_format in ("IMAGE", "VIDEO", "DOCUMENT"):
                     # Media header — Meta REQUIRES this component for templates
-                    # with media headers. We must always include it.
+                    # with media headers. The user must provide a valid public URL.
+                    # (Meta's template header_handle is only for template creation,
+                    #  not usable as a link or media id for sending messages.)
                     media_key = header_format.lower()
-
-                    # Check if the user provided a real URL
                     user_url = None
                     if header_variables and len(header_variables) > 0 and header_variables[0].strip():
                         candidate = header_variables[0].strip()
@@ -143,7 +143,6 @@ async def send_template_message(
                             user_url = candidate
 
                     if user_url:
-                        # User provided a valid URL — use "link"
                         components.append({
                             "type": "header",
                             "parameters": [{
@@ -151,25 +150,13 @@ async def send_template_message(
                                 media_key: {"link": user_url}
                             }]
                         })
-                        logger.info(f"Using user-provided URL for {header_format} header")
+                        logger.info(f"Using URL for {header_format} header: {user_url}")
                     else:
-                        # No user URL — use the template's example header_handle as media "id"
-                        example_handles = comp.get("example", {}).get("header_handle", [])
-                        if example_handles:
-                            handle = example_handles[0]
-                            components.append({
-                                "type": "header",
-                                "parameters": [{
-                                    "type": media_key,
-                                    media_key: {"id": handle}
-                                }]
-                            })
-                            logger.info(f"Using template header_handle as media id for {header_format} header")
-                        else:
-                            logger.warning(
-                                f"Template '{template_name}' has {header_format} header but no "
-                                f"header_handle or user URL — message may fail"
-                            )
+                        logger.warning(
+                            f"Template '{template_name}' has {header_format} header but no "
+                            f"valid URL was provided — message will likely fail. "
+                            f"Set the header image URL in campaign settings."
+                        )
                 elif header_format == "TEXT":
                     text = comp.get("text", "")
                     placeholders = re.findall(r"\{\{(\d+)\}\}", text)

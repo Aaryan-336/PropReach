@@ -52,10 +52,18 @@ def build_message_variables(contact: dict, template_vars: dict) -> tuple[list[st
 
     if template_vars:
         for k, field_name in template_vars.items():
-            value = contact.get(field_name, "")
-            if not value and contact.get("custom_fields"):
-                value = contact["custom_fields"].get(field_name, "")
-            val_str = str(value) if value else ""
+            # If the value is a URL (starts with http), use it directly
+            # instead of looking it up as a contact field name.
+            # This handles media header URLs (e.g., header_1: "https://example.com/img.jpg")
+            if isinstance(field_name, str) and (
+                field_name.startswith("http://") or field_name.startswith("https://")
+            ):
+                val_str = field_name
+            else:
+                value = contact.get(field_name, "")
+                if not value and contact.get("custom_fields"):
+                    value = contact["custom_fields"].get(field_name, "")
+                val_str = str(value) if value else ""
 
             if k.startswith("header_"):
                 try:
