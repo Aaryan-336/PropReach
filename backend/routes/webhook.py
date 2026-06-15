@@ -166,8 +166,10 @@ async def _handle_status_update(status_update: dict):
                 elif status == "failed":
                     # Extract error details from Meta's payload if available
                     errors = status_update.get("errors", [])
-                    error_msg = errors[0].get("title", "Unknown error") if errors else "Unknown error"
+                    error_msg = errors[0].get("message", errors[0].get("title", "Unknown error")) if errors else "Unknown error"
                     logger.warning(f"Message {wa_message_id} failed: {error_msg}")
+                    # Save error message in database
+                    sb.table("messages").update({"error_message": error_msg}).eq("wa_message_id", wa_message_id).execute()
 
         logger.info(f"Status update processed: {wa_message_id} → {status}")
 
