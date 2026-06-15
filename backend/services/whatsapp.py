@@ -140,6 +140,13 @@ async def send_template_message(
                     if header_variables and len(header_variables) > 0 and header_variables[0].strip():
                         candidate = header_variables[0].strip()
                         if candidate.startswith("http://") or candidate.startswith("https://"):
+                            # Auto-convert standard Google Drive sharing links to direct links
+                            if "drive.google.com/file/d/" in candidate:
+                                try:
+                                    file_id = candidate.split("drive.google.com/file/d/")[1].split("/")[0]
+                                    candidate = f"https://drive.google.com/uc?export=download&id={file_id}"
+                                except Exception:
+                                    pass
                             user_url = candidate
 
                     if user_url:
