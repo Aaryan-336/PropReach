@@ -50,6 +50,7 @@ class CampaignCreate(BaseModel):
     contact_group: Optional[str] = None
     scheduled_at: Optional[datetime] = None
     send_rate: int = Field(default=1, ge=1, le=80, description="Messages per second")
+    cooldown_seconds: float = Field(default=3.0, ge=0, le=60, description="Delay in seconds between each message send")
 
 
 class CampaignOut(BaseModel):
@@ -71,6 +72,7 @@ class CampaignOut(BaseModel):
 class CampaignLaunch(BaseModel):
     scheduled_at: Optional[datetime] = None
     send_rate: int = Field(default=1, ge=1, le=80)
+    cooldown_seconds: Optional[float] = Field(default=None, ge=0, le=60, description="Delay in seconds between each message send")
 
 
 # ── Messages ─────────────────────────────────────────

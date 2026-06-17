@@ -11,10 +11,13 @@ const STEPS = [
   { label: 'Confirm', description: 'Review & launch' },
 ];
 
-const SEND_SPEEDS = [
-  { value: 1, label: 'Slow (1/sec)', description: 'Safest, recommended for new accounts' },
-  { value: 5, label: 'Medium (5/sec)', description: 'Good balance of speed and safety' },
-  { value: 20, label: 'Fast (20/sec)', description: 'For high-volume verified accounts' },
+const COOLDOWN_PRESETS = [
+  { value: 0, label: 'No delay' },
+  { value: 3, label: '3s (Recommended)' },
+  { value: 5, label: '5s' },
+  { value: 10, label: '10s' },
+  { value: 30, label: '30s' },
+  { value: 60, label: '60s' },
 ];
 
 export default function CreateCampaignModal({ isOpen, onClose, preselectedTemplateName = null }) {
@@ -25,6 +28,7 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
     template_name: '',
     template_vars: {},
     send_rate: 1,
+    cooldown_seconds: 3,
     scheduled_at: null,
     sendNow: true,
   });
@@ -146,6 +150,7 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
       if (campaignId) {
         await launchCampaign(campaignId, {
           send_rate: formData.send_rate,
+          cooldown_seconds: formData.cooldown_seconds,
           scheduled_at: formData.sendNow ? null : formData.scheduled_at,
         });
       }
@@ -158,7 +163,7 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
       setStep(0);
       setFormData({
         name: '', contact_group: '', template_name: '',
-        template_vars: {}, send_rate: 1, scheduled_at: null, sendNow: true,
+        template_vars: {}, send_rate: 1, cooldown_seconds: 3, scheduled_at: null, sendNow: true,
       });
     },
     onError: (err) => {
@@ -538,22 +543,78 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
               )}
 
               <div>
-                <label className="label">Send Speed</label>
-                <div className="space-y-2">
-                  {SEND_SPEEDS.map(({ value, label, description }) => (
+                <label className="label">Cooldown Timer</label>
+                <p className="text-xs text-navy-400 mb-3">
+                  Set the delay between each message send. Higher values are safer for new accounts.
+                </p>
+
+                {/* Preset Buttons */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {COOLDOWN_PRESETS.map(({ value, label }) => (
                     <button
                       key={value}
-                      onClick={() => setFormData({ ...formData, send_rate: value })}
-                      className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
-                        formData.send_rate === value
-                          ? 'border-gold-500 bg-gold-50'
-                          : 'border-navy-100 hover:border-navy-200'
+                      onClick={() => setFormData({ ...formData, cooldown_seconds: value })}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                        formData.cooldown_seconds === value
+                          ? 'bg-gold-500 text-white shadow-sm'
+                          : 'bg-white text-navy-600 border border-navy-200 hover:border-navy-300'
                       }`}
                     >
-                      <p className="text-sm font-medium text-navy-900">{label}</p>
-                      <p className="text-xs text-navy-400">{description}</p>
+                      {label}
                     </button>
                   ))}
+                </div>
+
+                {/* Slider */}
+                <div className="space-y-2">
+                  <div className="relative">
+                    <input
+                      type="range"
+                      min="0"
+                      max="60"
+                      step="1"
+                      value={formData.cooldown_seconds}
+                      onChange={(e) => setFormData({ ...formData, cooldown_seconds: parseInt(e.target.value) })}
+                      className="w-full h-2 bg-navy-100 rounded-full appearance-none cursor-pointer
+                                 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
+                                 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-gold-500
+                                 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer
+                                 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white
+                                 [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-110"
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-navy-400">
+                    <span>0s</span>
+                    <span>15s</span>
+                    <span>30s</span>
+                    <span>45s</span>
+                    <span>60s</span>
+                  </div>
+                </div>
+
+                {/* Current Value Display */}
+                <div className={`mt-3 p-3 rounded-xl border-2 text-center transition-all ${
+                  formData.cooldown_seconds === 0
+                    ? 'border-danger/30 bg-danger/5'
+                    : formData.cooldown_seconds <= 5
+                    ? 'border-gold-500/30 bg-gold-50'
+                    : 'border-success/30 bg-success/5'
+                }`}>
+                  <p className="text-2xl font-bold font-display text-navy-900">
+                    {formData.cooldown_seconds}s
+                  </p>
+                  <p className={`text-[10px] font-semibold uppercase tracking-wider mt-0.5 ${
+                    formData.cooldown_seconds === 0
+                      ? 'text-danger'
+                      : formData.cooldown_seconds <= 5
+                      ? 'text-gold-600'
+                      : 'text-success'
+                  }`}>
+                    {formData.cooldown_seconds === 0 ? '⚡ No delay — risky for new accounts' :
+                     formData.cooldown_seconds <= 3 ? '🟡 Fast — moderate risk' :
+                     formData.cooldown_seconds <= 10 ? '✅ Safe — recommended' :
+                     '🛡️ Very safe — slower but safest'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -580,9 +641,9 @@ export default function CreateCampaignModal({ isOpen, onClose, preselectedTempla
                     <span className="text-sm font-medium text-navy-900">{formData.template_name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm text-navy-500">Speed</span>
+                    <span className="text-sm text-navy-500">Cooldown</span>
                     <span className="text-sm font-medium text-navy-900">
-                      {SEND_SPEEDS.find((s) => s.value === formData.send_rate)?.label}
+                      {formData.cooldown_seconds}s between messages
                     </span>
                   </div>
                   <div className="flex justify-between">

@@ -148,6 +148,7 @@ async def create_campaign(campaign: CampaignCreate):
         "scheduled_at": campaign.scheduled_at.isoformat() if campaign.scheduled_at else None,
         "total_contacts": len(contacts),
         "send_rate": campaign.send_rate,
+        "cooldown_seconds": campaign.cooldown_seconds,
     }
 
     result = sb.table("campaigns").insert(data).execute()
@@ -189,9 +190,14 @@ async def launch_campaign(
     except CredentialsNotConfigured as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Update send rate if provided
+    # Update send rate and cooldown if provided
+    update_fields = {}
     if launch and launch.send_rate:
-        sb.table("campaigns").update({"send_rate": launch.send_rate}).eq(
+        update_fields["send_rate"] = launch.send_rate
+    if launch and launch.cooldown_seconds is not None:
+        update_fields["cooldown_seconds"] = launch.cooldown_seconds
+    if update_fields:
+        sb.table("campaigns").update(update_fields).eq(
             "id", campaign_id
         ).execute()
 
@@ -342,7 +348,12 @@ async def process_retry_failed(campaign_id: str):
     template_name = campaign.get("template_name", "")
     template_vars = campaign.get("template_vars", {})
     send_rate = campaign.get("send_rate", 1) or 1
-    delay = 1.0 / send_rate
+    # Use cooldown_seconds if set, otherwise fall back to 1/send_rate
+    cooldown = campaign.get("cooldown_seconds")
+    if cooldown is not None:
+        delay = float(cooldown)
+    else:
+        delay = 1.0 / send_rate
 
     # Load failed messages
     failed_msgs_res = (
@@ -445,4 +456,34 @@ async def retry_campaign_failed(campaign_id: str, background_tasks: BackgroundTa
 
     return {"success": True, "message": f"Background retry started for {failed_count_res.count} failed messages"}
 
+
+@router.delete("/{campaign_id}")
+async def delete_campaign(campaign_id: str):
+    """Delete a campaign and all its associated messages."""
+    sb = get_supabase()
+
+    # Verify campaign exists
+    result = sb.table("campaigns").select("id, status").eq("id", campaign_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign = result.data[0]
+
+    # Don't allow deleting running campaigns
+    if campaign["status"] == "running":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a running campaign. Pause it first.",
+        )
+
+    # Cancel any scheduled job
+    cancel_scheduled_campaign(campaign_id)
+
+    # Delete all message logs for this campaign
+    sb.table("messages").delete().eq("campaign_id", campaign_id).execute()
+
+    # Delete the campaign itself
+    sb.table("campaigns").delete().eq("id", campaign_id).execute()
+
+    return SuccessResponse(message="Campaign deleted successfully")
 

@@ -121,7 +121,12 @@ async def run_campaign(campaign_id: str):
     template_name = campaign.get("template_name", "")
     template_vars = campaign.get("template_vars", {})
     send_rate = campaign.get("send_rate", 1) or 1
-    delay = 1.0 / send_rate
+    # Use cooldown_seconds if set, otherwise fall back to 1/send_rate for backwards compat
+    cooldown = campaign.get("cooldown_seconds")
+    if cooldown is not None:
+        delay = float(cooldown)
+    else:
+        delay = 1.0 / send_rate
 
     logger.info(
         f"Starting campaign {campaign_id}: {len(contacts)} contacts, "

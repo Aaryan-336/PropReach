@@ -142,6 +142,47 @@
   .empty-state-text {
     @apply text-navy-400 text-sm max-w-[260px];
   }
+
+  /* Masonry grid layout for contacts grouped view */
+  .masonry-grid {
+    column-count: 2;
+    column-gap: 12px;
+  }
+
+  @media (max-width: 480px) {
+    .masonry-grid {
+      column-count: 1;
+    }
+  }
+
+  .masonry-item {
+    break-inside: avoid;
+    margin-bottom: 12px;
+    display: inline-block;
+    width: 100%;
+  }
+
+  .group-card {
+    @apply bg-white rounded-card shadow-card overflow-hidden transition-all duration-300;
+  }
+
+  .group-card:hover {
+    @apply shadow-card-hover;
+    transform: translateY(-2px);
+  }
+
+  .group-card-header {
+    @apply px-3.5 py-2.5 flex items-center justify-between;
+    background: linear-gradient(135deg, var(--group-color-from, #1a1f36) 0%, var(--group-color-to, #2d3352) 100%);
+  }
+
+  .group-card-header h3 {
+    @apply text-white text-xs font-bold font-display tracking-wide truncate;
+  }
+
+  .group-card-header .group-count {
+    @apply text-white/70 text-[10px] font-semibold bg-white/15 px-2 py-0.5 rounded-full flex-shrink-0;
+  }
 }
 
 /* ── Utility animations ──────────────────────────── */

@@ -75,6 +75,10 @@ export function rerunCampaign(id) {
   return request(`/campaigns/${id}/rerun`, { method: 'POST' });
 }
 
+export function deleteCampaign(id) {
+  return request(`/campaigns/${id}`, { method: 'DELETE' });
+}
+
 export function fetchTemplates(refresh = false) {
   const params = refresh ? '?refresh=true' : '';
   return request(`/campaigns/templates/list${params}`);

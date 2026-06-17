@@ -44,6 +44,7 @@ create table if not exists campaigns (
   failed_count int default 0,
   reply_count int default 0,
   send_rate int default 1,
+  cooldown_seconds float default 3.0,  -- delay (seconds) between each message send, 0–60
   created_at timestamptz default now()
 );
 

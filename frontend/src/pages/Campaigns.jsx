@@ -7,6 +7,7 @@ import {
   resumeCampaign, 
   duplicateCampaign, 
   rerunCampaign,
+  deleteCampaign,
   fetchTemplates,
   deleteTemplate
 } from '../lib/api';
@@ -86,6 +87,18 @@ export default function Campaigns() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
       setActionMenu(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteCampaign,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      setActionMenu(null);
+    },
+    onError: (err) => {
+      alert(`Failed to delete campaign: ${err.message}`);
     },
   });
 
@@ -282,6 +295,16 @@ export default function Campaigns() {
                         className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-navy-700 hover:bg-navy-50 border-t border-navy-50"
                       >
                         <RotateCcw size={14} /> Rerun Campaign
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm('Are you sure you want to delete this campaign? This will permanently remove all message logs associated with it. This action cannot be undone.')) {
+                            deleteMutation.mutate(campaign.id);
+                          }
+                        }}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-danger hover:bg-danger/5 border-t border-navy-100"
+                      >
+                        <Trash2 size={14} /> Delete Campaign
                       </button>
                     </div>
                   )}
